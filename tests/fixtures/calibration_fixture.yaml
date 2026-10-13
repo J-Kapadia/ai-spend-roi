@@ -1,0 +1,18 @@
+# FIXTURE: invented ranges and invented sources, for testing the calibration checks against
+# tests/fixtures/gen_fixture.yaml. Not a figure from any paper and not what the author enters
+# in config/calibration.yaml.
+rows:
+  - {team_id: platform_engineering, effect_low: 0.05, effect_high: 0.15, source_ref: "Fixture A, 2000, Journal of Invented Results",
+     figure: "invented 10%", verified_on: "2000-01-01", extrapolated: true}
+  - {team_id: support, effect_low: 0.10, effect_high: 0.18, source_ref: "Fixture B, 2000, Journal of Invented Results",
+     figure: "invented 14%", verified_on: "2000-01-01", extrapolated: false}
+  - {team_id: sales_development, effect_low: 0.08, effect_high: 0.16, source_ref: "Fixture C, 2000, Journal of Invented Results",
+     figure: "invented 12%", verified_on: "2000-01-02", extrapolated: true}
+  - {team_id: product_engineering, effect_low: 0.15, effect_high: 0.25, source_ref: "Fixture D, 2000, Journal of Invented Results",
+     figure: "invented 20%", verified_on: "2000-01-02", extrapolated: false}
+  - {team_id: marketing, effect_low: 0.20, effect_high: 0.30, source_ref: "Fixture E, 2000, Journal of Invented Results",
+     figure: "invented 25%", verified_on: "2000-01-03", extrapolated: true}
+  - {team_id: finance_operations, effect_low: 0.04, effect_high: 0.12, source_ref: "Fixture F, 2000, Journal of Invented Results",
+     figure: "invented 8%", verified_on: "2000-01-03", extrapolated: true}
+  - {team_id: legal_operations, effect_low: 0.10, effect_high: 0.20, source_ref: "Fixture G, 2000, Journal of Invented Results",
+     figure: "invented 15%", verified_on: "2000-01-03", extrapolated: true}
