@@ -8,8 +8,10 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import date, datetime
+from pathlib import Path
 
 import duckdb
+import yaml
 
 PROV_RECORD_DDL = (
     "CREATE TABLE prov_record(prov_id VARCHAR PRIMARY KEY, name VARCHAR, through_month DATE,"
@@ -57,8 +59,62 @@ def _fmt(v: object) -> str:
 
 
 def source_rows(con: duckdb.DuckDBPyConnection, model: str, predicate: str) -> tuple[list[str], list[tuple]]:
-    cur = con.execute(f"SELECT * FROM {model} WHERE {predicate} ORDER BY team_id, month")
+    cur = con.execute(f"SELECT * FROM {model} WHERE {predicate} ORDER BY ALL")
     return [d[0] for d in cur.description], cur.fetchall()
+
+
+# An assumption number (a value printed from a config file) has no table: its source model is
+# `config` and its predicate names the file and the key, as `roi.yaml: value_per_unit.support.base`.
+CONFIG_MODEL = "config"
+
+
+def config_predicate(file: str, key: str) -> str:
+    return f"{file}: {key}"
+
+
+def config_rows(predicate: str, config: Path | None) -> tuple[list[str], list[tuple]]:
+    """The one (key, value) row a config predicate names; no rows when the file or key is absent."""
+    if config is None or not config.exists():
+        return ["key", "value"], []
+    key = predicate.split(": ", 1)[1]
+    node = yaml.safe_load(config.read_text(encoding="utf-8")) or {}
+    for part in key.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return ["key", "value"], []
+        node = node[part]
+    if node is None or isinstance(node, (dict, list)):
+        return ["key", "value"], []
+    return ["key", "value"], [(key, float(node))]
+
+
+def rows_of(
+    con: duckdb.DuckDBPyConnection, model: str, predicate: str, config: Path | None = None
+) -> tuple[list[str], list[tuple]]:
+    if model == CONFIG_MODEL:
+        return config_rows(predicate, config)
+    return source_rows(con, model, predicate)
+
+
+def derive(
+    con: duckdb.DuckDBPyConnection,
+    name: str,
+    through_month: str,
+    model: str,
+    predicate: str,
+    display_value: str,
+    value: float,
+    config: Path | None = None,
+) -> Record:
+    """A record computed from the current warehouse (or config) rather than read from `prov_record`.
+
+    The id is the same function of the same fields as for a stored record, so a derived record
+    and a stored one for the same number would carry the same id.
+    """
+    _, rows = rows_of(con, model, predicate, config)
+    return Record(
+        make_id(name, through_month, model, predicate, display_value), name, date.fromisoformat(f"{through_month}-01"),
+        display_value, value, model, predicate, len(rows), checksum(rows), "memo",
+    )
 
 
 def checksum(rows: list[tuple]) -> str:
@@ -66,9 +122,9 @@ def checksum(rows: list[tuple]) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def recheck(con: duckdb.DuckDBPyConnection, rec: Record) -> tuple[int, str]:
+def recheck(con: duckdb.DuckDBPyConnection, rec: Record, config: Path | None = None) -> tuple[int, str]:
     """Re-run the stored predicate; return the row count and checksum it gives now."""
-    _, rows = source_rows(con, rec.source_model, rec.source_predicate)
+    _, rows = rows_of(con, rec.source_model, rec.source_predicate, config)
     return len(rows), checksum(rows)
 
 

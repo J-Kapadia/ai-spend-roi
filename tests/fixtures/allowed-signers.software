@@ -1,0 +1,3 @@
+# FIXTURE: an allowed-signers file with a software key, which `--require-signoff` must reject.
+# The private half was discarded when this file was made.
+reviewer@example.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOL9XgSEz4xJMiOKntj9FrNiUJ/yDoY9IQakjF2Dio4M fixture software key (private half discarded)

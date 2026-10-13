@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install the locked dependencies
+        run: uv sync --frozen
+      - name: Product tests
+        run: uv run --frozen pytest -q
+      # Until the real company's configuration is committed, the site is built from the toy company.
+      - name: Build the site and check that every number resolves
+        run: |
+          work=$(mktemp -d)
+          uv run --frozen roi build --toy --work-dir "$work"
+          uv run --frozen roi memo --month 2025-06 --check --work-dir "$work"
+          uv run --frozen roi doctor --tree --work-dir "$work"
