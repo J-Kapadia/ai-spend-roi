@@ -1,0 +1,17 @@
+{
+ "description": "Three measured teams with fitted curves and a $50,000 monthly increment; worked by hand in alloc_small.md.",
+ "budget_usd": 50000,
+ "teams": [
+  {"team_id": "finance", "kind": "team_level", "headcount": 40, "baseline_outcome": 12.0, "a": 0.15, "k": 10000.0,
+   "x0_cents": 10000.0, "max_observed_cents": 10000.0, "value_per_unit_usd": 9000.0},
+  {"team_id": "sales", "kind": "additive", "headcount": 250, "baseline_outcome": 25.0, "a": 0.30, "k": 30000.0,
+   "x0_cents": 30000.0, "max_observed_cents": 30000.0, "value_per_unit_usd": 35.0},
+  {"team_id": "support", "kind": "additive", "headcount": 300, "baseline_outcome": 10.0, "a": 0.24, "k": 20000.0,
+   "x0_cents": 20000.0, "max_observed_cents": 20000.0, "value_per_unit_usd": 60.0}
+ ],
+ "expected": {
+  "amount_cents": {"finance": 200000, "sales": 3316576, "support": 1483424},
+  "unallocated_cents": 0,
+  "capped": {"finance": true, "sales": false, "support": false}
+ }
+}
