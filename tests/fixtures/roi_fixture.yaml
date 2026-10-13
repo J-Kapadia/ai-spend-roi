@@ -1,0 +1,21 @@
+# FIXTURE: invented values per unit for testing the ROI machinery with the fixture company of
+# tests/fixtures/gen_fixture.yaml. Not the values the author enters in config/roi.yaml.
+# Same schema as config/roi.yaml. `roi build --config tests/fixtures/gen_fixture.yaml` picks this
+# file up because it sits beside the generator config and is named to match it.
+
+memo_budget_usd: 5000
+rho: 0.05
+
+sensitivity:
+  multipliers: [0.5, 0.75, 1.0, 1.25, 1.5]
+  survive_share: 0.90
+
+value_per_unit:
+  platform_engineering: {kind: additive, low: 25, base: 50, high: 100}
+  support: {kind: additive, low: 6, base: 12, high: 24}
+  sales_development: {kind: additive, low: 0.005, base: 0.01, high: 0.02}
+  product_engineering: {kind: additive, low: 25, base: 50, high: 100}
+  marketing: {kind: additive, low: 30, base: 60, high: 120}
+  finance_operations: {kind: team_level, low: 200, base: 400, high: 800}
+  legal_operations: {kind: additive, low: 40, base: 80, high: 160}
+  people_operations: {kind: additive, low: 250, base: 500, high: 1000}

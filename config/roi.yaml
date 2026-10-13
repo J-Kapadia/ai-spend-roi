@@ -1,0 +1,33 @@
+# Value per unit of each team's output, and the settings of the ROI, allocation and agenda steps.
+#
+# `roi build` reads this file. Every measured team listed under `value_per_unit` needs a value
+# per unit (USD) as low <= base <= high; while a measured team's values are empty the build exits
+# 4 naming gate G1, where the author enters them with one line of reasoning each in the design
+# notes. A value per unit is an assumption, not a finding: the memo prints it with its range.
+#
+# kind (optional; when given it must equal the team's `kind` in the books):
+#   additive    dollars = unit lift x headcount-months x value; the lift is per head per month
+#               and the value is USD per unit of output
+#   team_level  dollars = unit lift x months x value; the metric is a level for the whole team
+#               and the value is USD per unit-month of change (days to close)
+#
+# A measured team that is not listed here (a toy company, say) gets no ROI row.
+
+value_per_unit:
+  platform_engineering: {kind: additive, low: null, base: null, high: null}    # per change shipped
+  support: {kind: additive, low: null, base: null, high: null}                 # per ticket resolved
+  sales_development: {kind: additive, low: null, base: null, high: null}       # per USD of pipeline created
+  product_engineering: {kind: additive, low: null, base: null, high: null}     # per change shipped
+  marketing: {kind: additive, low: null, base: null, high: null}               # per asset shipped
+  finance_operations: {kind: team_level, low: null, base: null, high: null}    # per day of close time, per month
+  legal_operations: {kind: additive, low: null, base: null, high: null}        # per contract reviewed
+  people_operations: {kind: additive, low: null, base: null, high: null}       # per requisition filled
+
+sensitivity:
+  multipliers: [0.5, 0.75, 1.0, 1.25, 1.5]   # global scale of the base value, for the grid
+  survive_share: 0.90                        # a team survives when its ROI multiple exceeds 1 in this share
+                                             # of the 1,000 draws of its value (the draws are fixed in code)
+
+memo_budget_usd: null   # monthly increment the allocation spreads, whole USD; entered at G1
+rho: 0.05               # within-user correlation for the testing agenda; a config assumption
+sigma_override: {}      # optional {team_id: sigma} for the testing agenda, printed as a config assumption
