@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Refuse to push private paths, secrets or denylisted terms (this repository's origin is public).
+here=$(cd "$(dirname "$0")" && pwd)
+deny=${ROI_DENYLIST_FILE:-$HOME/.needle/ai-spend-roi.denylist}
+[ -s "$deny" ] || { echo "pre-push: denylist $deny missing; refusing to push" >&2; exit 1; }
+"$here/../scrub-check.sh" --no-denylist >&2 || { echo "pre-push: scrub-check tree part failed; refusing" >&2; exit 1; }
+PRIV='^(docs/(plan|notes|research|build-log)/|notes/|AGENTS\.md$|CLAUDE\.md$|\.needle\.yaml$|\.beads/|\.private\.git/)'
+z=0000000000000000000000000000000000000000
+while read -r lref lsha rref rsha; do
+  [ "$lsha" = "$z" ] && continue
+  if git ls-tree -r --name-only "$lsha" | grep -E "$PRIV" >&2; then echo "pre-push: private path(s) above in $lref; refusing" >&2; exit 1; fi
+  if git grep -qIE -f "$deny" "$lsha" -- .; then git grep -nIE -f "$deny" "$lsha" -- . | cut -d: -f2,3 >&2; echo "pre-push: a private term appears at the file:line above; refusing" >&2; exit 1; fi
+  if [ "$rsha" = "$z" ]; then range=$lsha; else range=$rsha..$lsha; fi
+  if git log --format=%B "$range" | grep -qE -f "$deny"; then echo "pre-push: a commit message in $range contains a private term; refusing" >&2; exit 1; fi
+done
+exit 0
