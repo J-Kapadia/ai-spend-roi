@@ -1,0 +1,13 @@
+version: 2
+
+models:
+  - name: fct_team_month
+    columns:
+      - name: team_id
+        data_tests: [not_null]
+      - name: month
+        data_tests: [not_null]
+      - name: headcount
+        data_tests: [not_null]
+      - name: outcome
+        data_tests: [not_null]

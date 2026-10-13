@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: main
+    tables:
+      - name: raw_ai_spend
+      - name: raw_hr_roster
+      - name: raw_output
+      - name: dim_team

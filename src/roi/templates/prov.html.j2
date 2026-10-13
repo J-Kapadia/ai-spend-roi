@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Provenance {{ rec.prov_id }}</title>
+</head>
+<body>
+<h1>Provenance of {{ rec.display_value }}</h1>
+<dl data-prov-page="{{ rec.prov_id }}" data-rows="{{ rec.source_rows }}" data-checksum="{{ rec.source_checksum }}">
+<dt>Name</dt><dd>{{ rec.name }}</dd>
+<dt>Through month</dt><dd><time datetime="{{ month }}">{{ month }}</time></dd>
+<dt>Step</dt><dd>{{ rec.step }}</dd>
+<dt>Source model</dt><dd>{{ rec.source_model }}</dd>
+<dt>Predicate</dt><dd><code>{{ rec.source_predicate }}</code></dd>
+<dt>Rows</dt><dd>{{ rec.source_rows }}</dd>
+<dt>Checksum</dt><dd><code>{{ rec.source_checksum }}</code></dd>
+</dl>
+<table>
+<thead><tr>{% for c in columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+<tbody>
+{% for row in rows %}<tr>{% for v in row %}<td>{{ v }}</td>{% endfor %}</tr>
+{% endfor %}</tbody>
+</table>
+{% if capped %}<p>Only the first rows are shown.</p>{% endif %}
+<p><a href="../index.html">Back to the memo</a></p>
+</body>
+</html>

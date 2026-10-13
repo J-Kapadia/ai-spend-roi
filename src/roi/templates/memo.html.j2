@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI spend memo</title>
+</head>
+<body>
+<h1>AI spend memo for <time datetime="{{ month }}">{{ month }}</time></h1>
+<p class="banner">This memo runs on a toy synthetic company. Its effects are planted by the generator: recovering them shows that the method works, not anything about a real company. The estimator behind it is a throwaway stub.</p>
+<p>Company AI spend in <time datetime="{{ month }}">{{ month }}</time> was <a href="prov/{{ rec.prov_id }}.html"><span data-prov="{{ rec.prov_id }}">{{ rec.display_value }}</span></a>.</p>
+<ul>
+{% for name, status, reason in teams %}
+<li>{{ name }}: {{ status }}{% if reason %} ({{ reason }}){% endif %}</li>
+{% endfor %}
+</ul>
+</body>
+</html>

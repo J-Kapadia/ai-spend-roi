@@ -1,0 +1,8 @@
+# The warehouse file is passed by `roi build` as --vars '{db_path: ...}'.
+roi:
+  target: default
+  outputs:
+    default:
+      type: duckdb
+      path: "{{ var('db_path') }}"
+      threads: 1

@@ -1,0 +1,42 @@
+
+# Secrets (public repository)
+*.env
+.env.*
+*.pem
+*.key
+
+# Build and tool state
+node_modules/
+dist/
+build/
+target/
+__pycache__/
+*.pyc
+.venv/
+*.log
+.DS_Store
+.claude/settings.local.json
+
+# Product state (plan §13.4): regenerable, never committed
+/data/*
+!/data/MANIFEST.sha256
+!/data/MANIFEST.incoming.sha256
+/truth/
+/warehouse/
+/site/
+*.duckdb
+*.duckdb.wal
+.pytest_cache/
+*.egg-info/
+
+# Private: versioned in .private.git, never in this repository
+/.private.git/
+/docs/plan/
+/docs/notes/
+/docs/research/
+/docs/build-log/
+/notes/
+/AGENTS.md
+/CLAUDE.md
+/.needle.yaml
+/.beads/
