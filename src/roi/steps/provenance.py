@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import duckdb
 
-from roi import prov
+from roi import prov, steps
 from roi.steps import BuildContext
 
 NAME = "provenance"
@@ -35,8 +35,8 @@ def run(ctx: BuildContext) -> None:
         prov_id = prov.make_id(SPEND_NAME, ctx.through, "fct_team_month", predicate, display)
 
         con.execute("BEGIN")
-        con.execute(prov.PROV_RECORD_DDL)
-        con.execute(prov.PROV_BUILD_DDL)
+        steps.create_table(con, prov.PROV_RECORD_DDL)
+        steps.create_table(con, prov.PROV_BUILD_DDL)
         con.execute(
             "INSERT INTO prov_record VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [prov_id, SPEND_NAME, f"{ctx.through}-01", display, cents / 100, "fct_team_month", predicate,

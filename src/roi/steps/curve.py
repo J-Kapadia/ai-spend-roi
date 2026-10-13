@@ -9,6 +9,7 @@ from __future__ import annotations
 import duckdb
 
 from roi import curve
+from roi import steps
 from roi.steps import BuildContext
 
 NAME = "curve"
@@ -38,7 +39,7 @@ def run(ctx: BuildContext) -> None:
     try:
         fitted = rows(con, ctx.through)
         con.execute("BEGIN")
-        con.execute(SCHEMA)
+        steps.create_table(con, SCHEMA)
         if fitted:
             con.executemany("INSERT INTO fit_curve VALUES (?, ?, ?, ?, ?, ?, ?)", fitted)
         con.execute("COMMIT")

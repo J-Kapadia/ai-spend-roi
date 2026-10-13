@@ -11,6 +11,7 @@ import click
 import duckdb
 
 from roi import alloc
+from roi import steps
 from roi.steps import BuildContext
 
 NAME = "alloc"
@@ -40,7 +41,7 @@ def run(ctx: BuildContext) -> None:
         else:
             out = rows(con, ctx.through, cfg, round(cfg.memo_budget_usd * 100))
         con.execute("BEGIN")
-        con.execute(SCHEMA)
+        steps.create_table(con, SCHEMA)
         if out:
             con.executemany("INSERT INTO alloc_result VALUES (?, ?, ?, ?, ?, ?, ?)", out)
         con.execute("COMMIT")

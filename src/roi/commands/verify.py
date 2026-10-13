@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from roi import estimator, verify_books, verify_truth
+from roi import estimator, rollforward, verify_books, verify_truth
 from roi.workdir import RoiError, WorkDir
 
 
@@ -47,6 +47,8 @@ def command(work: WorkDir, through: str, work_dir: Path | None) -> None:
         work = WorkDir(work_dir)
     if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", through):
         raise RoiError(2, f"bad month {through!r}; expected YYYY-MM")
+    if work.warehouse_db.exists():
+        rollforward.recover(work)  # finish a roll-forward that was killed between its file and marker swaps
     con = verify_books.open_warehouse(work)
     try:
         months = {m for (m,) in con.execute("SELECT DISTINCT strftime(month, '%Y-%m') FROM raw_output").fetchall()}
@@ -68,6 +70,7 @@ def command(work: WorkDir, through: str, work_dir: Path | None) -> None:
         discipline = verify_books.check_unmeasured_discipline(
             con, through, empty_agenda_ok=not (work.root / "config" / "roi.yaml").exists()
         )
+        degenerate = verify_books.allocation_degenerate(con, through)
         control_sensitivity = verify_books.leave_one_control_out(estimator.read_panel(con, through), through)
     finally:
         con.close()
@@ -106,6 +109,9 @@ def command(work: WorkDir, through: str, work_dir: Path | None) -> None:
     all_failures += failures
     for line in failures:
         click.echo(f"    {line}")
+
+    if degenerate:
+        click.echo(f"warning: {degenerate}")
 
     for line in _leave_one_out(control_sensitivity):
         click.echo(line)

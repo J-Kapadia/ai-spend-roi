@@ -11,6 +11,7 @@ import click
 import duckdb
 
 from roi import agenda, alloc
+from roi import steps
 from roi.steps import BuildContext
 
 NAME = "agenda"
@@ -41,7 +42,7 @@ def run(ctx: BuildContext) -> None:
         else:
             out = rows(con, ctx.through, cfg)
         con.execute("BEGIN")
-        con.execute(SCHEMA)
+        steps.create_table(con, SCHEMA)
         if out:
             con.executemany("INSERT INTO agenda_item VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", out)
         con.execute("COMMIT")

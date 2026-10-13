@@ -10,7 +10,7 @@ from datetime import date
 
 import duckdb
 
-from roi import estimator
+from roi import estimator, steps
 from roi.steps import BuildContext
 
 NAME = "estimate"
@@ -56,7 +56,7 @@ def run(ctx: BuildContext) -> None:
         att_rows, cov_rows, effect_rows = rows(ctx.through, estimator.read_panel(con, ctx.through))
         con.execute("BEGIN")
         for statement in SCHEMA:
-            con.execute(statement)
+            steps.create_table(con, statement)
         con.executemany("INSERT INTO est_att_gt VALUES (?, ?, ?, ?, ?, ?, ?)", att_rows)
         con.executemany("INSERT INTO est_att_cov VALUES (?, ?, ?, ?, ?, ?)", cov_rows)
         con.executemany("INSERT INTO est_team_effect VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", effect_rows)

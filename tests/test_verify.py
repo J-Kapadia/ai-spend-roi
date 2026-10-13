@@ -357,3 +357,40 @@ def test_the_report_in_verify_output_lists_each_measured_team(built):
         assert f"  {team}: " in section
     assert "without people_operations" in section
     assert "not a check" in out
+
+
+# ---- the allocation-degenerate warning ---------------------------------------------------------
+
+def allocate(work, *rows):
+    """Write allocation rows (team, amount in cents, capped) for the built month."""
+    for team, amount, capped in rows:
+        edit(work, f"INSERT INTO alloc_result VALUES ('{THROUGH}', 100000, '{team}', {amount}, {capped}, 1.0, 0.0)")
+
+
+def test_no_allocation_no_warning(built):
+    assert "allocation degenerate" not in verify(built).output
+
+
+@pytest.mark.parametrize("rows, why", [
+    ([("support", 100000, "false")], "1 funded team, fewer than two"),
+    ([("support", 0, "false"), ("marketing", 0, "false")], "0 funded teams, fewer than two"),
+    ([("support", 60000, "true"), ("marketing", 40000, "true"), ("product_engineering", 0, "false")],
+     "none of the funded teams is uncapped"),
+])
+def test_a_degenerate_allocation_warns_and_does_not_fail(copy, rows, why):
+    allocate(copy, *rows)
+    result = verify(copy)
+    assert result.exit_code == 0, result.output
+    assert f"warning: allocation degenerate: {why}" in result.output
+
+
+def test_two_funded_teams_one_uncapped_is_not_degenerate(copy):
+    allocate(copy, ("support", 60000, "true"), ("marketing", 40000, "false"))
+    result = verify(copy)
+    assert result.exit_code == 0, result.output
+    assert "allocation degenerate" not in result.output
+
+
+def test_the_warning_follows_the_through_month(copy):
+    edit(copy, "INSERT INTO alloc_result VALUES ('2026-02', 100000, 'support', 100000, false, 1.0, 0.0)")
+    assert "allocation degenerate" not in verify(copy).output  # a row of another month is not this month's allocation

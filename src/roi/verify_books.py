@@ -278,6 +278,27 @@ def check_unmeasured_discipline(
     )
 
 
+def allocation_degenerate(con: duckdb.DuckDBPyConnection, through: str) -> str | None:
+    """The warning text when the allocation for `through` is degenerate: fewer than two teams funded,
+    or none of the funded teams uncapped. A property of the data, not a failed check. None when the
+    allocation is fine or was not written (no budget configured)."""
+    columns = {c for (c,) in con.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'alloc_result'").fetchall()}
+    if not {"through_month", "amount_cents", "capped"} <= columns:
+        return None  # not built, or not the allocation table of this pipeline
+    rows = con.execute(f"SELECT amount_cents, capped FROM ({_at('alloc_result')})", [through]).fetchall()
+    if not rows:
+        return None
+    funded = [capped for amount, capped in rows if amount > 0]
+    uncapped = [c for c in funded if not c]
+    reasons = []
+    if len(funded) < 2:
+        reasons.append(f"{len(funded)} funded team{'' if len(funded) == 1 else 's'}, fewer than two")
+    if not uncapped:
+        reasons.append("none of the funded teams is uncapped")
+    return "allocation degenerate: " + "; ".join(reasons) if reasons else None
+
+
 # ---------------------------------------------------------------------------------------------
 # Leave-one-control-out
 

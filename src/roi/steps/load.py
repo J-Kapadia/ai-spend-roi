@@ -35,6 +35,9 @@ TABLES = {
 }
 
 
+# The months `roi rollforward` has ingested, with the SHA-256 of each file: written by the roll-forward only.
+ROLLFORWARD_INGEST_DDL = "CREATE TABLE rollforward_ingest(month DATE, file VARCHAR, sha256 VARCHAR)"
+
 DEFAULT_GL_ACCOUNT = "6100"
 SETTINGS_FILE = "build_settings.json"
 
@@ -62,6 +65,7 @@ def run(ctx: BuildContext) -> None:
         # The settings the models and the verification read back, such as the ledger account of AI usage.
         con.execute("CREATE TABLE roi_settings(key VARCHAR, value VARCHAR)")
         con.executemany("INSERT INTO roi_settings VALUES (?, ?)", sorted(_settings(ctx.work).items()))
+        con.execute(ROLLFORWARD_INGEST_DDL)
         for table, columns in TABLES.items():
             path = ctx.work.books / f"{table}.csv"
             con.execute(

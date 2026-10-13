@@ -14,6 +14,7 @@ import click
 import duckdb
 
 from roi import roi as roi_calc
+from roi import steps
 from roi.steps import BuildContext
 from roi.workdir import RoiError, WorkDir
 
@@ -95,7 +96,7 @@ def run(ctx: BuildContext) -> None:
         team_rows, sens_rows, unlisted = rows(ctx.through, roi_calc.read_inputs(con, ctx.through), cfg)
         con.execute("BEGIN")
         for statement in SCHEMA:
-            con.execute(statement)
+            steps.create_table(con, statement)
         if team_rows:  # executemany refuses an empty list
             con.executemany("INSERT INTO roi_team VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", team_rows)
             con.executemany("INSERT INTO roi_sensitivity VALUES (?, ?, ?, ?, ?)", sens_rows)

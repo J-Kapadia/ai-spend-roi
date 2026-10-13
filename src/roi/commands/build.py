@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import csv
-import os
 from pathlib import Path
 
 import click
 
-from roi import steps
+from roi import rollforward, steps
 from roi.gen import books, config, panel, toy
 from roi.steps import load
 from roi.workdir import RoiError, WorkDir
@@ -27,9 +26,14 @@ def _through(work: WorkDir) -> str:
     return max(months)
 
 
-def _remove(path: Path) -> None:
-    path.unlink(missing_ok=True)
-    path.with_name(path.name + ".wal").unlink(missing_ok=True)
+def _replay_months(work: WorkDir, built: str, through: str) -> list[str]:
+    """The incoming months to replay after the books, up to `through`; exit 2 if `through` has no data."""
+    if through < built:
+        raise RoiError(2, f"--through {through} is before the last month of the books, {built}")
+    months = [m for m in rollforward.incoming_months(work) if built < m <= through]
+    if through > built and (not months or months[-1] != through):
+        raise RoiError(2, f"no incoming data for {through} in {work.data / 'incoming'}")
+    return months
 
 
 @click.command("build")
@@ -37,15 +41,23 @@ def _remove(path: Path) -> None:
 @click.option("--config", "config_path", type=click.Path(dir_okay=False, path_type=Path), default=None,
               help="Generate the books from this generator config first. Without it (and without --toy) "
                    "the books already under the work dir are loaded.")
+@click.option("--through", "through_opt", default=None,
+              help="Replay the incoming months up to this one after the books, as `roi rollforward` would, "
+                   "one after the other against the file being built. Default: the last month of the books.")
 @click.option("--work-dir", "work_dir", type=click.Path(file_okay=False, path_type=Path), default=None,
               help="Directory for data/, truth/ and warehouse/; overrides the global --work-dir.")
 @click.pass_obj
-def command(work: WorkDir, use_toy: bool, config_path: Path | None, work_dir: Path | None) -> None:
+def command(
+    work: WorkDir, use_toy: bool, config_path: Path | None, through_opt: str | None, work_dir: Path | None
+) -> None:
     """Build the warehouse from the books.
 
     The books are loaded into warehouse/roi.next.duckdb, dbt builds and tests the models
     against that file, and only when every step has passed is it swapped onto roi.duckdb
     with one os.replace. A failed or killed build leaves the published file as it was.
+
+    With --through, the incoming months after the books are ingested in order into the same file, so
+    `roi build --through 2026-04` rebuilds what `roi build` then `roi rollforward --month 2026-04` made.
     """
     if work_dir is not None:
         work = WorkDir(work_dir)
@@ -61,18 +73,25 @@ def command(work: WorkDir, use_toy: bool, config_path: Path | None, work_dir: Pa
         books.write(cfg, panel.simulate(cfg), work)
         gl_account = cfg.gl_account
 
-    through = _through(work)
+    built = _through(work)
+    through = built if through_opt is None else through_opt
+    rollforward.check_month(through)
+    replay = _replay_months(work, built, through)
     work.warehouse.mkdir(parents=True, exist_ok=True)
     if use_toy or config_path is not None:
         load.write_settings(work, gl_account)
-    _remove(work.warehouse_next_db)  # left behind by an interrupted build
-    ctx = steps.BuildContext(work=work, db=work.warehouse_next_db, through=through)
-    try:
-        for step in steps.discover():
-            click.echo(f"step {step.NAME}")
-            step.run(ctx)
-    except BaseException:
-        _remove(work.warehouse_next_db)
-        raise
-    os.replace(work.warehouse_next_db, work.warehouse_db)
+    with rollforward.locked(work):
+        rollforward.promote_pending(work)
+        rollforward.remove_db(work.warehouse_next_db)  # left behind by an interrupted build
+        ctx = steps.BuildContext(work=work, db=work.warehouse_next_db, through=built)
+        try:
+            for step in steps.discover():
+                click.echo(f"step {step.NAME}")
+                step.run(ctx)
+            for month in replay:
+                rollforward.advance(work, work.warehouse_next_db, month)
+        except BaseException:
+            rollforward.remove_db(work.warehouse_next_db)
+            raise
+        rollforward.publish(work, work.warehouse_next_db, keep_previous=False)
     click.echo(f"built {work.warehouse_db}")

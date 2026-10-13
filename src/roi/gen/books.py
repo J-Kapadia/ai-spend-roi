@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
+from roi.gen import manifest
 from roi.gen.config import GenConfig, month_start
 from roi.gen.panel import STREAM_BOOKS, STREAM_GL, STREAM_UNASSIGNED, Panel, stream
 from roi.workdir import WorkDir
@@ -121,29 +122,53 @@ def _truth(cfg: GenConfig, panel: Panel) -> dict:
     return {"seed": panel.seed, "generator_version": cfg.generator_version, "teams": teams}
 
 
+SPEND_HEADER = ["usage_date", "team_id", "project_id", "user_id", "provider", "model",
+                "input_tokens", "output_tokens", "cost_cents"]
+GL_HEADER = ["entry_id", "period", "account_code", "cost_center", "debit_cents", "credit_cents", "memo"]
+ROSTER_HEADER = ["employee_id", "team_id", "start_date", "end_date", "monthly_payroll_cents"]
+OUTPUT_HEADER = ["team_id", "month", "metric_id", "value"]
+
+
+def _output_rows(panel: Panel, months: list[str]) -> list[list]:
+    return [[tp.spec.team_id, f"{m}-01", tp.spec.metric_id, f"{tp.output[i]:.6f}"]
+            for tp in panel.teams for i, m in enumerate(panel.months) if m in months]
+
+
+def write_incoming(cfg: GenConfig, panel: Panel, work: WorkDir) -> None:
+    """Write the held-back month to `data/incoming/<month>/` and refresh `data/MANIFEST.incoming.sha256`.
+
+    The month's rows only. The roster file holds the inserts for starts in the month and the end dates
+    set in it, never an edit of an earlier row; the generated companies have a constant headcount, so
+    it is empty here. `dim_team` does not change and has no incoming file.
+    """
+    months = [cfg.incoming_month]
+    out = work.data / manifest.INCOMING_DIR / cfg.incoming_month
+    out.mkdir(parents=True, exist_ok=True)
+    _write_csv(out / "raw_ai_spend.csv", SPEND_HEADER, _spend_rows(cfg, panel, months))
+    _write_csv(out / "raw_gl_journal.csv", GL_HEADER, _gl_rows(cfg, panel, months))
+    _write_csv(out / "raw_hr_roster.csv", ROSTER_HEADER, [])
+    _write_csv(out / "raw_output.csv", OUTPUT_HEADER, _output_rows(panel, months))
+    manifest.write_incoming(work.data)
+
+
 def write(cfg: GenConfig, panel: Panel, work: WorkDir) -> None:
-    """Write the books for first_month..last_month and the truth for the whole panel."""
+    """Write the books for first_month..last_month, the held-back month, and the truth for the whole panel."""
     months = [m for m in panel.months if m <= cfg.last_month]
     work.books.mkdir(parents=True, exist_ok=True)
     work.truth.mkdir(parents=True, exist_ok=True)
 
-    _write_csv(work.books / "raw_ai_spend.csv",
-               ["usage_date", "team_id", "project_id", "user_id", "provider", "model",
-                "input_tokens", "output_tokens", "cost_cents"], _spend_rows(cfg, panel, months))
-    _write_csv(work.books / "raw_gl_journal.csv",
-               ["entry_id", "period", "account_code", "cost_center", "debit_cents", "credit_cents", "memo"],
-               _gl_rows(cfg, panel, months))
+    _write_csv(work.books / "raw_ai_spend.csv", SPEND_HEADER, _spend_rows(cfg, panel, months))
+    _write_csv(work.books / "raw_gl_journal.csv", GL_HEADER, _gl_rows(cfg, panel, months))
     start = month_start(cfg.first_month).replace(year=month_start(cfg.first_month).year - 1).isoformat()
     _write_csv(work.books / "raw_hr_roster.csv",
-               ["employee_id", "team_id", "start_date", "end_date", "monthly_payroll_cents"],
+               ROSTER_HEADER,
                [[f"{tp.spec.team_id}-e{i + 1:03d}", tp.spec.team_id, start, "",
                  int(round(tp.spec.monthly_payroll_per_head_usd * 100))]
                 for tp in panel.teams for i in range(tp.spec.headcount)])
-    _write_csv(work.books / "raw_output.csv", ["team_id", "month", "metric_id", "value"],
-               [[tp.spec.team_id, f"{m}-01", tp.spec.metric_id, f"{tp.output[i]:.6f}"]
-                for tp in panel.teams for i, m in enumerate(panel.months) if m <= cfg.last_month])
+    _write_csv(work.books / "raw_output.csv", OUTPUT_HEADER, _output_rows(panel, months))
     _write_csv(work.books / "dim_team.csv", ["team_id", "name", "metric_id", "unit_label", "direction", "kind"],
                [[tp.spec.team_id, tp.spec.name, tp.spec.metric_id, tp.spec.unit_label, tp.spec.direction,
                  tp.spec.kind] for tp in panel.teams])
+    write_incoming(cfg, panel, work)
     (work.truth / "truth.json").write_text(
         json.dumps(_truth(cfg, panel), indent=2, sort_keys=True) + "\n", encoding="utf-8")

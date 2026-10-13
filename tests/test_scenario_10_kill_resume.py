@@ -1,8 +1,11 @@
 """A build killed between the load and the file swap leaves the published file alone,
-and the next build resumes to the same warehouse as an uninterrupted one."""
+and the next build resumes to the same warehouse as an uninterrupted one. A roll-forward killed
+before the swap leaves the published file alone; killed between the file swap and the marker swap
+it leaves the new month in place, and the next command promotes the marker."""
 
 import csv
 import hashlib
+import shutil
 import signal
 import subprocess
 import sys
@@ -12,11 +15,13 @@ import duckdb
 import pytest
 from click.testing import CliRunner
 
+from roi import rollforward
 from roi.cli import main
 
 pytestmark = pytest.mark.slow
 
 FIXTURE = Path(__file__).parent / "fixtures" / "gen_fixture.yaml"
+ROI_FIXTURE = Path(__file__).parent / "fixtures" / "roi_fixture.yaml"
 
 # Runs `roi build` with the dbt step replaced by a SIGKILL of the process itself: the books are
 # loaded into warehouse/roi.next.duckdb and nothing has been swapped yet.
@@ -134,3 +139,113 @@ def test_a_failed_dbt_test_leaves_the_published_file_unchanged(tmp_path):
     assert result.exit_code == 3, result.output
     assert file_digest(published(tmp_path)) == before
     assert not leftover(tmp_path).exists()
+
+
+# ---- the roll-forward --------------------------------------------------------------------------
+
+# Run a command with one function of the roll-forward replaced by a SIGKILL of the process itself.
+KILL_AT = """
+import os, signal, sys
+import roi.rollforward as rf
+setattr(rf, sys.argv[1], lambda *a, **k: os.kill(os.getpid(), signal.SIGKILL))
+from roi.cli import main
+main(sys.argv[2:])
+"""
+
+
+def killed(work, function, *args) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, "-c", KILL_AT, function, "--work-dir", str(work), *args],
+        capture_output=True, text=True, check=False,
+    )
+
+
+def state(work) -> tuple[str, str | None]:
+    """The content hash of the published file and the marker beside it."""
+    marker = work / "warehouse" / ".complete"
+    return rollforward.content_hash(published(work)), marker.read_text().strip() if marker.exists() else None
+
+
+@pytest.fixture(scope="module")
+def base(tmp_path_factory):
+    work = tmp_path_factory.mktemp("rf_base")
+    (work / "config").mkdir()
+    shutil.copy(ROI_FIXTURE, work / "config" / "roi.yaml")
+    assert roi(work, "build", "--config", str(FIXTURE)).exit_code == 0
+    return work
+
+
+@pytest.fixture(scope="module")
+def rolled(base, tmp_path_factory):
+    """The content hash of the base warehouse rolled forward without interruption."""
+    work = tmp_path_factory.mktemp("rf_rolled") / "w"
+    shutil.copytree(base, work, symlinks=True)
+    result = roi(work, "rollforward", "--month", "2026-04")
+    assert result.exit_code == 0, result.output
+    return state(work)[0]
+
+
+@pytest.fixture
+def work(base, tmp_path):
+    shutil.copytree(base, tmp_path / "w", symlinks=True)
+    return tmp_path / "w"
+
+
+def test_a_roll_forward_killed_before_the_swap_leaves_the_published_file_unchanged(work, rolled):
+    before, marker = state(work)
+    file_before = file_digest(published(work))
+    proc = killed(work, "publish", "rollforward", "--month", "2026-04")
+    assert proc.returncode == -signal.SIGKILL, proc.stderr
+    assert file_digest(published(work)) == file_before
+    assert state(work) == (before, marker) and marker == before
+    staging = work / "warehouse" / "roi.staging.duckdb"
+    assert staging.exists()  # the finished month, never published
+
+    rerun = roi(work, "rollforward", "--month", "2026-04")
+    assert rerun.exit_code == 0, rerun.output
+    assert not staging.exists()
+    assert state(work) == (rolled, rolled)
+
+
+def test_a_roll_forward_killed_between_the_file_swap_and_the_marker_swap_is_promoted_by_the_next_command(work, rolled):
+    old, _ = state(work)
+    proc = killed(work, "swap_marker", "rollforward", "--month", "2026-04")
+    assert proc.returncode == -signal.SIGKILL, proc.stderr
+    wh = work / "warehouse"
+    # the file swap happened: the new month is in the published file, the marker is behind it
+    new, marker = state(work)
+    assert new == rolled and marker == old
+    assert (wh / ".complete.next").read_text().strip() == rolled
+    assert not (wh / "roi.staging.duckdb").exists()
+    assert rollforward.content_hash(wh / "roi.prev.duckdb") == old
+
+    result = roi(work, "verify", "--through", "2026-04")  # the next command
+    assert result.exit_code == 0, result.output
+    assert state(work) == (rolled, rolled)
+    assert not (wh / ".complete.next").exists()
+
+    again = roi(work, "rollforward", "--month", "2026-04")
+    assert again.exit_code == 0 and "already ingested, identical" in again.output
+    assert state(work) == (rolled, rolled)
+
+
+def test_a_roll_forward_retried_after_a_kill_between_the_swaps_is_a_no_op(work, rolled):
+    killed(work, "swap_marker", "rollforward", "--month", "2026-04")
+    again = roi(work, "rollforward", "--month", "2026-04")
+    assert again.exit_code == 0, again.output
+    assert "already ingested, identical" in again.output
+    assert state(work) == (rolled, rolled)
+
+
+def test_a_build_killed_between_the_file_swap_and_the_marker_swap_is_promoted_too(tmp_path, uninterrupted):
+    proc = killed(tmp_path, "swap_marker", "build", "--config", str(FIXTURE))
+    assert proc.returncode == -signal.SIGKILL, proc.stderr
+    assert published(tmp_path).exists() and not leftover(tmp_path).exists()
+    assert (tmp_path / "warehouse" / ".complete.next").exists() and not (tmp_path / "warehouse" / ".complete").exists()
+
+    # a build promotes the leftover marker, then rebuilds: the same warehouse as an uninterrupted one
+    rerun = roi(tmp_path, "build", "--config", str(FIXTURE))
+    assert rerun.exit_code == 0, rerun.output
+    assert fingerprint(published(tmp_path)) == uninterrupted
+    assert not (tmp_path / "warehouse" / ".complete.next").exists()
+    assert (tmp_path / "warehouse" / ".complete").read_text().strip() == rollforward.content_hash(published(tmp_path))
