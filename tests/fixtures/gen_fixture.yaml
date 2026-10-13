@@ -1,0 +1,61 @@
+# FIXTURE: invented numbers for testing the generator machinery. Not Beta Co, and not the
+# values the author enters in config/gen.yaml. Same schema as config/gen.yaml.
+fixture: true
+seed: 20261013
+generator_version: gen-fixture
+
+months:
+  first: "2025-04"
+  last: "2026-03"
+  incoming: "2026-04"
+
+dgp:
+  month_shock_sd: 0.03
+  ramp_months: 3
+  unassigned_share: 0.02
+  rows_per_user_month: 3
+  input_cost_share: 0.7
+  gl_account: "6100"
+  noise_accounts: ["6200", "6300"]
+  target_ai_share_of_payroll: null
+
+prices:
+  - {provider: provider_a, model: model_a1, input_cents_per_mtok: 300.0, output_cents_per_mtok: 1500.0}
+  - {provider: provider_a, model: model_a2, input_cents_per_mtok: 100.0, output_cents_per_mtok: 500.0}
+
+# noise_sd: the five teams measured through 2026-03 (support, sales_development,
+# product_engineering, marketing, finance_operations) have 0.02 to 0.04, median 0.03; the
+# unmeasured platform team and the control carry that median.
+teams:
+  - {team_id: platform_engineering, name: Platform Engineering, metric_id: changes_shipped, unit_label: changes,
+     direction: 1, kind: additive, rollout_month: "2025-04", headcount: 4, monthly_payroll_per_head_usd: 10000,
+     baseline_output: 20.0, target_spend_per_head_usd: 60, effect_at_target: 0.10, noise_sd: 0.03,
+     calibration_ref: fixture}
+  - {team_id: support, name: Support, metric_id: tickets_resolved, unit_label: tickets,
+     direction: 1, kind: additive, rollout_month: "2025-07", headcount: 6, monthly_payroll_per_head_usd: 6000,
+     baseline_output: 50.0, target_spend_per_head_usd: 40, effect_at_target: 0.14, noise_sd: 0.02,
+     calibration_ref: fixture}
+  - {team_id: sales_development, name: Sales Development, metric_id: pipeline_created, unit_label: USD of pipeline,
+     direction: 1, kind: additive, rollout_month: "2025-08", headcount: 5, monthly_payroll_per_head_usd: 7000,
+     baseline_output: 40000.0, target_spend_per_head_usd: 50, effect_at_target: 0.12, noise_sd: 0.025,
+     calibration_ref: fixture}
+  - {team_id: product_engineering, name: Product Engineering, metric_id: changes_shipped, unit_label: changes,
+     direction: 1, kind: additive, rollout_month: "2025-09", headcount: 6, monthly_payroll_per_head_usd: 11000,
+     baseline_output: 18.0, target_spend_per_head_usd: 80, effect_at_target: 0.20, noise_sd: 0.03,
+     calibration_ref: fixture}
+  - {team_id: marketing, name: Marketing, metric_id: assets_shipped, unit_label: assets,
+     direction: 1, kind: additive, rollout_month: "2025-11", headcount: 4, monthly_payroll_per_head_usd: 8000,
+     baseline_output: 12.0, target_spend_per_head_usd: 45, effect_at_target: 0.25, noise_sd: 0.035,
+     calibration_ref: fixture}
+  - {team_id: finance_operations, name: Finance Operations, metric_id: days_to_close, unit_label: days,
+     direction: -1, kind: team_level, rollout_month: "2025-12", headcount: 4, monthly_payroll_per_head_usd: 9000,
+     baseline_output: 8.0, target_spend_per_head_usd: 35, effect_at_target: 0.08, noise_sd: 0.04,
+     calibration_ref: fixture}
+  - {team_id: legal_operations, name: Legal Operations, metric_id: contracts_reviewed, unit_label: contracts,
+     direction: 1, kind: additive, rollout_month: "2026-02", headcount: 3, monthly_payroll_per_head_usd: 12000,
+     baseline_output: 15.0, target_spend_per_head_usd: 55, effect_at_target: 0.15, noise_sd: 0.03,
+     calibration_ref: fixture}
+  - {team_id: people_operations, name: People Operations, metric_id: requisitions_filled, unit_label: requisitions,
+     direction: 1, kind: additive, rollout_month: null, headcount: 4, monthly_payroll_per_head_usd: 7500,
+     baseline_output: 3.0, target_spend_per_head_usd: 0, effect_at_target: 0.0, noise_sd: 0.03,
+     calibration_ref: null}

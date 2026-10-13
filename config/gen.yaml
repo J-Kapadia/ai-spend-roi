@@ -1,0 +1,40 @@
+# Generator config for Beta Co, the synthetic company.
+#
+# `roi gen` reads this file. The `teams` table below is entered by the author at gate G1; while
+# it is empty `roi gen` exits 4 naming that gate. Each row needs these fields:
+#
+#   team_id, name, metric_id, unit_label
+#   direction                      1 if higher output is better, -1 if lower is better
+#   kind                           additive (output per head) or team_level (raw monthly level)
+#   rollout_month                  YYYY-MM of first AI spend, or null for the one control team
+#   headcount                      constant over the panel
+#   monthly_payroll_per_head_usd
+#   baseline_output                per head per month if additive, else the raw monthly level
+#   target_spend_per_head_usd      monthly, reached after the ramp
+#   effect_at_target               improvement as a fraction (0.12 = 12%) at the target spend
+#   noise_sd                       team-month noise, log points
+#   calibration_ref                optional note naming the source of effect_at_target
+seed: 20261013
+generator_version: gen-1
+
+months:
+  first: "2025-04"
+  last: "2026-03"       # last month written to the books
+  incoming: "2026-04"   # held-back month: simulated in the panel and truth, not yet in the books
+
+dgp:
+  month_shock_sd: 0.03          # one common draw per month, log points
+  ramp_months: 3                # spend ramps linearly to target over a team's first months
+  unassigned_share: 0.02        # of each month's team spend, booked to the `unassigned` bucket
+  rows_per_user_month: 4        # spend rows (user-days) per user per month
+  input_cost_share: 0.7         # share of cost that is input tokens, to derive token counts
+  gl_account: "6100"            # the AI-usage ledger account
+  noise_accounts: ["6200", "6300"]
+  target_ai_share_of_payroll: null   # entered at gate G1; checked against the table by its test
+
+# Fictional providers and models, with a price per million tokens in cents.
+prices:
+  - {provider: provider_a, model: model_a1, input_cents_per_mtok: 300.0, output_cents_per_mtok: 1500.0}
+  - {provider: provider_a, model: model_a2, input_cents_per_mtok: 100.0, output_cents_per_mtok: 500.0}
+
+teams: []
