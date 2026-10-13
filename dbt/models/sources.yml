@@ -1,10 +1,13 @@
 version: 2
 
+# The books, loaded verbatim by `roi build` (src/roi/steps/load.py), plus the build settings.
 sources:
   - name: raw
     schema: main
     tables:
       - name: raw_ai_spend
+      - name: raw_gl_journal
       - name: raw_hr_roster
       - name: raw_output
       - name: dim_team
+      - name: roi_settings

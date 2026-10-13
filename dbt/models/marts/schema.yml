@@ -1,0 +1,64 @@
+version: 2
+
+models:
+  - name: fct_ai_spend_team_month
+    columns:
+      - name: team_id
+        data_tests: [not_null]
+      - name: month
+        data_tests: [not_null]
+      - name: spend_cents
+        data_tests: [not_null]
+      - name: gl_cents
+        data_tests: [not_null]
+      - name: tie_diff_cents
+        data_tests: [not_null]
+
+  - name: fct_output_team_month
+    columns:
+      - name: team_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_team')
+                field: team_id
+      - name: month
+        data_tests: [not_null]
+      - name: output_signed
+        data_tests: [not_null]
+      - name: headcount
+        data_tests: [not_null]
+
+  - name: fct_ai_share_of_payroll
+    columns:
+      - name: team_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('stg_team')
+                field: team_id
+      - name: month
+        data_tests: [not_null]
+      - name: spend_cents
+        data_tests: [not_null]
+      - name: payroll_cents
+        data_tests: [not_null]
+
+  - name: fct_team_month
+    columns:
+      - name: team_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_team')
+                field: team_id
+      - name: month
+        data_tests: [not_null]
+      - name: headcount
+        data_tests: [not_null]
+      - name: outcome
+        data_tests: [not_null]
+      - name: spend_cents
+        data_tests: [not_null]

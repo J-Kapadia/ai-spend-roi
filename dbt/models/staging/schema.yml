@@ -1,0 +1,94 @@
+version: 2
+
+models:
+  - name: stg_team
+    columns:
+      - name: team_id
+        data_tests: [unique, not_null]
+      - name: name
+        data_tests: [not_null]
+      - name: metric_id
+        data_tests: [not_null]
+      - name: direction
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [1, -1]
+                quote: false
+      - name: kind
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [additive, team_level]
+
+  - name: stg_ai_spend
+    columns:
+      - name: usage_date
+        data_tests: [not_null]
+      - name: team_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_team')
+                field: team_id
+              config:
+                where: "team_id <> 'unassigned'"
+      - name: user_id
+        data_tests: [not_null]
+      - name: cost_cents
+        data_tests: [not_null]
+
+  - name: stg_gl_journal
+    columns:
+      - name: entry_id
+        data_tests: [unique, not_null]
+      - name: month
+        data_tests: [not_null]
+      - name: account_code
+        data_tests: [not_null]
+      - name: team_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_team')
+                field: team_id
+              config:
+                where: "team_id <> 'unassigned'"
+      - name: debit_cents
+        data_tests: [not_null]
+      - name: credit_cents
+        data_tests: [not_null]
+
+  - name: stg_hr_roster
+    columns:
+      - name: employee_id
+        data_tests: [unique, not_null]
+      - name: team_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_team')
+                field: team_id
+      - name: start_date
+        data_tests: [not_null]
+      - name: monthly_payroll_cents
+        data_tests: [not_null]
+
+  - name: stg_output
+    columns:
+      - name: team_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_team')
+                field: team_id
+      - name: month
+        data_tests: [not_null]
+      - name: value
+        data_tests: [not_null]

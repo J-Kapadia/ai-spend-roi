@@ -7,7 +7,10 @@ flags:
   send_anonymous_usage_stats: false
 
 model-paths: ["models"]
+test-paths: ["tests"]
 
+# Tables throughout: a view stores the catalog name of the file it was built in, so a copy of
+# the warehouse under another file name would stop working.
 models:
   roi:
     +materialized: table
