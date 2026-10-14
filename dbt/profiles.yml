@@ -6,7 +6,9 @@ roi:
       type: duckdb
       path: "{{ var('db_path') }}"
       threads: 1
-      # The same memory cap as every connection `roi` opens (default 2GB): DuckDB would
-      # otherwise take 80% of the machine's memory for this one run.
+      # The same memory and thread caps as every connection `roi` opens (defaults 2GB and
+      # 2): DuckDB would otherwise take 80% of the machine's memory and every core for this
+      # one run. `threads` above is dbt's own model parallelism; this one is DuckDB's.
       settings:
         memory_limit: "{{ env_var('ROI_DUCKDB_MEMORY_LIMIT', '2GB') }}"
+        threads: "{{ env_var('ROI_DUCKDB_THREADS', '2') }}"

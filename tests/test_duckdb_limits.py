@@ -2,7 +2,9 @@
 
 DuckDB's default is 80% of the machine's memory per connection; a build, its dbt subprocess
 and tests running in parallel each open one, so every connection takes the cap in
-ROI_DUCKDB_MEMORY_LIMIT (default 2GB) and spills beside the database file.
+ROI_DUCKDB_MEMORY_LIMIT (default 2GB) and spills beside the database file. Likewise each
+connection would use every core, so each takes the thread cap in ROI_DUCKDB_THREADS
+(default 2).
 """
 
 from __future__ import annotations
@@ -12,11 +14,13 @@ import re
 from pathlib import Path
 
 import jinja2
+import pytest
 import yaml
 
 from roi import db
 
 VAR = "ROI_DUCKDB_MEMORY_LIMIT"
+THREADS = "ROI_DUCKDB_THREADS"
 DBT_DIR = Path(__file__).resolve().parents[1] / "dbt"
 UNITS = {
     "B": 1, "bytes": 1,
@@ -89,3 +93,45 @@ def test_dbt_profile_reads_the_same_cap(monkeypatch):
     assert render() == db.DEFAULT_MEMORY_LIMIT
     monkeypatch.setenv(VAR, "512MiB")
     assert render() == "512MiB"
+
+
+def thread_count(con) -> int:
+    return con.execute("SELECT current_setting('threads')").fetchone()[0]
+
+
+def test_connections_take_the_default_thread_cap(tmp_path, monkeypatch):
+    monkeypatch.delenv(THREADS, raising=False)
+    con = db.connect(tmp_path / "w.duckdb")
+    con.execute("CREATE TABLE t (x INTEGER)")
+    assert thread_count(con) == db.DEFAULT_THREADS == 2
+    con.close()
+    con = db.connect(tmp_path / "w.duckdb", read_only=True)
+    assert thread_count(con) == 2
+    con.close()
+    con = db.connect()
+    assert thread_count(con) == 2
+    con.close()
+
+
+def test_env_var_overrides_the_thread_cap(tmp_path, monkeypatch):
+    monkeypatch.setenv(THREADS, "3")
+    con = db.connect(tmp_path / "w.duckdb")
+    assert thread_count(con) == 3
+    con.close()
+    monkeypatch.setenv(THREADS, "zero")
+    with pytest.raises(ValueError, match=THREADS):
+        db.connect(tmp_path / "w.duckdb")
+
+
+def test_dbt_profile_reads_the_same_thread_cap(monkeypatch):
+    raw = yaml.safe_load((DBT_DIR / "profiles.yml").read_text())
+    template = raw["roi"]["outputs"]["default"]["settings"]["threads"]
+    assert THREADS in template
+
+    def render() -> str:
+        return jinja2.Template(template).render(env_var=lambda k, d=None: os.environ.get(k, d))
+
+    monkeypatch.delenv(THREADS, raising=False)
+    assert render() == str(db.DEFAULT_THREADS)
+    monkeypatch.setenv(THREADS, "3")
+    assert render() == "3"
