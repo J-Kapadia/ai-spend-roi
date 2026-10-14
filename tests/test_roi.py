@@ -236,13 +236,13 @@ def test_partly_entered_values_count_as_not_entered(tmp_path):
 
 # ---- the step's rules --------------------------------------------------------------------------
 
-def test_a_listed_measured_team_without_values_stops_the_build_naming_the_gate():
+def test_a_listed_measured_team_without_values_stops_the_build():
     cfg = calc.load_config(SHIPPED)
     inputs = [team_input(team_id="support")]
     with pytest.raises(RoiError) as e:
         step.rows(THROUGH, inputs, cfg)
     assert e.value.exit_code == 4
-    assert "gate G1" in e.value.message and "support" in e.value.message
+    assert "fill in the value per unit" in e.value.message and "support" in e.value.message
 
 
 def test_a_team_the_config_does_not_list_gets_no_row():
@@ -347,12 +347,12 @@ def test_the_roi_step_runs_between_the_estimator_and_provenance():
     assert names.index("estimate") < names.index("roi") < names.index("provenance")
 
 
-def test_a_build_without_values_exits_4_naming_the_gate(tmp_path):
+def test_a_build_without_values_exits_4(tmp_path):
     gen = tmp_path / "elsewhere.yaml"  # no config of the same name beside it: the shipped, empty one applies
     shutil.copy(GEN_FIXTURE, gen)
     result = roi(tmp_path / "w", "build", "--config", str(gen))
     assert result.exit_code == 4, result.output
-    assert "gate G1" in result.output
+    assert "fill in the value per unit" in result.output
     assert not (tmp_path / "w" / "warehouse" / "roi.duckdb").exists()
     assert not (tmp_path / "w" / "warehouse" / "roi.next.duckdb").exists()
 

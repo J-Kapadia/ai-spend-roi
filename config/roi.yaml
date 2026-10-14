@@ -2,7 +2,7 @@
 #
 # `roi build` reads this file. Every measured team listed under `value_per_unit` needs a value
 # per unit (USD) as low <= base <= high; while a measured team's values are empty the build exits
-# 4 naming gate G1, where the author enters them with one line of reasoning each in the design
+# 4 and asks for them, and the author enters them with one line of reasoning each in the design
 # notes. A value per unit is an assumption, not a finding: the memo prints it with its range.
 #
 # kind (optional; when given it must equal the team's `kind` in the books):
@@ -28,6 +28,6 @@ sensitivity:
   survive_share: 0.90                        # a team survives when its ROI multiple exceeds 1 in this share
                                              # of the 1,000 draws of its value (the draws are fixed in code)
 
-memo_budget_usd: null   # monthly increment the allocation spreads, whole USD; entered at G1
+memo_budget_usd: null   # monthly increment the allocation spreads, whole USD; filled in by the author
 rho: 0.05               # within-user correlation for the testing agenda; a config assumption
 sigma_override: {}      # optional {team_id: sigma} for the testing agenda, printed as a config assumption

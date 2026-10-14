@@ -1,7 +1,7 @@
 """500-seed coverage simulation of the estimator's 95% interval, on `roi.gen.panel`.
 
 Each seed simulates the team-month panel of the generator and estimates every team. For each
-measured team the share of seeds in which the interval holds the planted team effect must be at
+measured team the share of seeds in which the interval holds a planted team effect must be at
 least 0.90; there is no upper limit (the interval over-covers for teams with one or two pre-period
 changes, which only makes it more cautious) and each team's mean interval width is printed. Arms:
 the design as is, the common month shock set to zero and to twice its value (all three gated), and
@@ -190,4 +190,4 @@ def test_pretrend_power_on_the_fixture_design(emit):
         f"pre-trend test on a planted drift of 0.05 a month (4 leads), {len(SEEDS)} seeds: "
         f"flagged {flagged / len(SEEDS):.3f}, not testable {untestable / len(SEEDS):.3f}"
     )
-    assert 0 <= flagged <= len(SEEDS)  # a finding, not a gate
+    assert 0 <= flagged <= len(SEEDS)  # a finding, not a failure

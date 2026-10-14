@@ -15,7 +15,7 @@ FIXTURE = FIXTURES / "calibration_fixture.yaml"
 
 
 def planted(gen: Path) -> dict[str, float]:
-    """The planted effect of every team that has one (all but the control)."""
+    """Planted effect of every team that has one (all but the control)."""
     return {t.team_id: t.effect_at_target for t in config.load(gen).teams if t.rollout_month is not None}
 
 
@@ -34,7 +34,7 @@ def test_every_row_that_exists_in_the_real_file_is_verified_and_holds_the_plante
     path = ROOT / "config" / "calibration.yaml"
     raw = calibration.read(path)
     if not raw["rows"]:
-        pytest.skip("no figures yet: the author enters them at gate G1")
+        pytest.skip("no figures yet: the author fills them in")
     assert calibration.row_problems(raw) == []
     gen = ROOT / "config" / "gen.yaml"
     if yaml.safe_load(gen.read_text(encoding="utf-8")).get("teams"):

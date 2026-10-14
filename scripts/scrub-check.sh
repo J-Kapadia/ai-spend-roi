@@ -2,32 +2,37 @@
 # Scrub check: keep secrets, private paths and private terms out of this public repository.
 #
 #   scrub-check.sh --no-denylist   tree part: secret patterns over every file, and a check that no
-#                                  path from the .gitignore Private block is tracked. Needs no
-#                                  denylist and no .git, so it runs on a bare extraction.
+#                                  private path is tracked (the private paths are listed below).
+#                                  Needs no denylist and no .git, so it runs on a bare extraction.
 #   scrub-check.sh --history       history part: secret patterns over every commit message on all
 #                                  refs. Exits 4 without .git.
 #   scrub-check.sh                 everything: the tree part, the history part (when .git exists)
 #                                  and the denylist over every file and commit message.
 #   --root <dir>                   check <dir> instead of this repository.
 #   --exclude <path>               skip a file (repeatable).
+#   --list-private                 print the private paths, one per line, and exit.
 #
-# The denylist is $ROI_DENYLIST_FILE (default $HOME/.needle/ai-spend-roi.denylist), one extended
-# regular expression per line. Output names files, lines and commits and never prints a term or a
-# matched line.
-# Exit: 0 clean, 1 hit, 2 usage, 4 cannot check (denylist unreadable or empty or invalid, no .git
-# for --history, no Private block in .gitignore): fails closed.
+# The denylist is the file named by $ROI_DENYLIST_FILE (no default), one extended regular
+# expression per line. Output names files, lines and commits and never prints a term or a matched
+# line.
+# The private paths are the lines of the file named by $ROI_PRIVATE_PATHS_FILE when it is set;
+# otherwise the "# Private:" block of the repository's .git/info/exclude. A path ending in "/" is a
+# directory. With neither source the private-path check is reported as skipped.
+# Exit: 0 clean, 1 hit, 2 usage, 4 cannot check (denylist variable unset, unreadable, empty or
+# invalid; no .git for --history; private paths file unreadable): fails closed.
 set -euo pipefail
 
 usage() {
-  echo "usage: scrub-check.sh [--no-denylist] [--history] [--root <dir>] [--exclude <path>]..." >&2
+  echo "usage: scrub-check.sh [--no-denylist] [--history] [--list-private] [--root <dir>] [--exclude <path>]..." >&2
   exit 2
 }
 
-do_tree=0 do_history=0 no_denylist=0 root="" excludes=()
+do_tree=0 do_history=0 no_denylist=0 list_private=0 root="" excludes=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-denylist) do_tree=1; no_denylist=1 ;;
     --history) do_history=1 ;;
+    --list-private) list_private=1 ;;
     --root) [ $# -ge 2 ] || usage; root=$2; shift ;;
     --exclude) [ $# -ge 2 ] || usage; excludes+=("${2#./}"); shift ;;
     *) usage ;;
@@ -41,14 +46,41 @@ fi
 do_denylist=0
 [ "$no_denylist" = 0 ] && [ "$do_tree" = 1 ] && do_denylist=1
 
-denylist=${ROI_DENYLIST_FILE:-$HOME/.needle/ai-spend-roi.denylist}
-case "$denylist" in /*) ;; *) denylist=$PWD/$denylist ;; esac
+denylist=${ROI_DENYLIST_FILE-}
+case "$denylist" in "" | /*) ;; *) denylist=$PWD/$denylist ;; esac
+private_file=${ROI_PRIVATE_PATHS_FILE-}
+case "$private_file" in "" | /*) ;; *) private_file=$PWD/$private_file ;; esac
 if [ -z "$root" ]; then root=$(dirname "$0")/..; fi
 [ -d "$root" ] || { echo "scrub-check: $root is not a directory" >&2; exit 2; }
 cd "$root"
 
 has_git=0
 [ -e .git ] && has_git=1
+[ -z "$private_file" ] || [ -r "$private_file" ] || { echo "scrub-check: the private paths file is not readable" >&2; exit 4; }
+
+# private_paths: print the private paths, one per line, from $ROI_PRIVATE_PATHS_FILE or the
+# "# Private:" block of the repository's exclude file. Prints nothing when there is no source.
+private_paths() {
+  local src=""
+  if [ -n "$private_file" ]; then
+    src=$private_file
+  elif [ "$has_git" = 1 ]; then
+    local common
+    common=$(git rev-parse --git-common-dir 2>/dev/null) || return 0
+    [ -f "$common/info/exclude" ] && src=$common/info/exclude
+  fi
+  [ -n "$src" ] || return 0
+  if [ -n "$private_file" ]; then
+    grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$src" | sed 's|^/||' || true
+  else
+    awk '/^# Private:/ {on=1; next} on && NF && !/^#/ {print}' "$src" | sed 's|^/||'
+  fi
+}
+
+if [ "$list_private" = 1 ]; then
+  private_paths
+  exit 0
+fi
 
 SECRET_RE=(
   'AKIA[0-9A-Z]{16}'
@@ -94,19 +126,20 @@ if [ "$do_tree" = 1 ]; then
     fail=1
   fi
 
-  [ -f .gitignore ] || { echo "scrub-check: no .gitignore; cannot read the Private block" >&2; exit 4; }
-  mapfile -t private < <(awk '/^# Private:/ {on=1; next} on && NF && !/^#/ {print}' .gitignore)
-  [ "${#private[@]}" -gt 0 ] || { echo "scrub-check: .gitignore has no Private block" >&2; exit 4; }
-  for f in "${listed[@]}"; do
-    f=${f#./}
-    for p in "${private[@]}"; do
-      p=${p#/}
-      case "$p" in
-        */) [[ $f == "$p"* ]] && { echo "scrub-check: private path is tracked: $f"; fail=1; } ;;
-        *) [ "$f" = "$p" ] && { echo "scrub-check: private path is tracked: $f"; fail=1; } ;;
-      esac
+  mapfile -t private < <(private_paths)
+  if [ "${#private[@]}" -eq 0 ]; then
+    echo "scrub-check: no private paths listed; the private-path check is skipped"
+  else
+    for f in "${listed[@]}"; do
+      f=${f#./}
+      for p in "${private[@]}"; do
+        case "$p" in
+          */) [[ $f == "$p"* ]] && { echo "scrub-check: private path is tracked: $f"; fail=1; } ;;
+          *) [ "$f" = "$p" ] && { echo "scrub-check: private path is tracked: $f"; fail=1; } ;;
+        esac
+      done
     done
-  done
+  fi
 fi
 
 # messages_matching <grep args>: print the id of each commit, on all refs, whose message matches.
@@ -134,6 +167,7 @@ if [ "$do_history" = 1 ]; then
 fi
 
 if [ "$do_denylist" = 1 ]; then
+  [ -n "$denylist" ] || { echo "scrub-check: ROI_DENYLIST_FILE is not set; refusing to pass" >&2; exit 4; }
   [ -r "$denylist" ] || { echo "scrub-check: denylist is not readable; refusing to pass" >&2; exit 4; }
   terms=$(mktemp)
   trap 'rm -f "$terms"' EXIT

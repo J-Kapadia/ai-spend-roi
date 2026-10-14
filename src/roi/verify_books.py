@@ -16,7 +16,7 @@ write it from, and is reported as empty). A table that a later step adds is chec
 and is reported by name as not built until then.
 
 The leave-one-control-out report re-estimates each measured team without each of its control
-teams in turn, where it has at least two. It is a report, not a gate.
+teams in turn, where it has at least two. It is a report, not a check that fails the run.
 """
 
 from __future__ import annotations

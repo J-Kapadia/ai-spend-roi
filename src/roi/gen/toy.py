@@ -1,8 +1,8 @@
-"""Toy generator: 3 teams, 6 months, from a fixed seed (plan Phase 0, D-13).
+"""Toy generator: 3 teams, 6 months, from a fixed seed.
 
 A library function that `roi build --toy` calls, not a command. It writes the books to
 `data/books/` and a small `truth/truth.json` with its own serializer. Throwaway: the
-Beta Co generator (Phase 1) replaces it.
+Beta Co generator replaces it.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""State directories, all resolved from the global --work-dir (plan D-23)."""
+"""State directories, all resolved from the global --work-dir."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import click
 
 
 class RoiError(click.ClickException):
-    """A failure with an exit code from the plan's error contract (§14)."""
+    """A failure that carries the exit code the command ends with."""
 
     def __init__(self, code: int, message: str) -> None:
         super().__init__(message)

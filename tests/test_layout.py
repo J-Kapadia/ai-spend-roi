@@ -1,4 +1,4 @@
-"""Layout rules of plan D-23: commands and steps are registries of one module each."""
+"""Layout rules: commands and steps are registries of one module each."""
 
 import ast
 import importlib

@@ -1,4 +1,4 @@
-"""Write the provenance of the memo's one number: `prov_record` and `prov_build` (plan D-17)."""
+"""Write the provenance of the memo's one number: `prov_record` and `prov_build`."""
 
 from __future__ import annotations
 

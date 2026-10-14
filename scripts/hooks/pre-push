@@ -1,14 +1,26 @@
 #!/usr/bin/env bash
 # Refuse to push private paths, secrets or denylisted terms (this repository's origin is public).
+# $ROI_DENYLIST_FILE names the denylist (no default); the private paths come from scrub-check.sh.
 here=$(cd "$(dirname "$0")" && pwd)
-deny=${ROI_DENYLIST_FILE:-$HOME/.needle/ai-spend-roi.denylist}
-[ -s "$deny" ] || { echo "pre-push: denylist $deny missing; refusing to push" >&2; exit 1; }
+deny=${ROI_DENYLIST_FILE-}
+[ -n "$deny" ] && [ -s "$deny" ] || { echo "pre-push: ROI_DENYLIST_FILE is unset or names a missing or empty file; refusing to push" >&2; exit 1; }
 "$here/../scrub-check.sh" --no-denylist >&2 || { echo "pre-push: scrub-check tree part failed; refusing" >&2; exit 1; }
-PRIV='^(docs/(plan|notes|research|build-log)/|notes/|AGENTS\.md$|CLAUDE\.md$|\.needle\.yaml$|\.beads/|\.private\.git/)'
+private=$("$here/../scrub-check.sh" --list-private) || { echo "pre-push: cannot read the private paths; refusing" >&2; exit 1; }
+[ -n "$private" ] || { echo "pre-push: no private paths listed; refusing to push" >&2; exit 1; }
+# private_in <sha>: print each path in the tree of <sha> that is a private path.
+private_in() {
+  git ls-tree -r --name-only "$1" | awk -v list="$private" '
+    BEGIN { n = split(list, P, "\n") }
+    { for (i = 1; i <= n; i++) {
+        p = P[i]; if (p == "") continue
+        if (substr(p, length(p)) == "/" ? index($0, p) == 1 : $0 == p) { print; next }
+      } }'
+}
 z=0000000000000000000000000000000000000000
 while read -r lref lsha rref rsha; do
   [ "$lsha" = "$z" ] && continue
-  if git ls-tree -r --name-only "$lsha" | grep -E "$PRIV" >&2; then echo "pre-push: private path(s) above in $lref; refusing" >&2; exit 1; fi
+  hits=$(private_in "$lsha")
+  if [ -n "$hits" ]; then echo "$hits" >&2; echo "pre-push: private path(s) above in $lref; refusing" >&2; exit 1; fi
   if git grep -qIE -f "$deny" "$lsha" -- .; then git grep -nIE -f "$deny" "$lsha" -- . | cut -d: -f2,3 >&2; echo "pre-push: a private term appears at the file:line above; refusing" >&2; exit 1; fi
   if [ "$rsha" = "$z" ]; then range=$lsha; else range=$rsha..$lsha; fi
   if git log --format=%B "$range" | grep -qE -f "$deny"; then echo "pre-push: a commit message in $range contains a private term; refusing" >&2; exit 1; fi

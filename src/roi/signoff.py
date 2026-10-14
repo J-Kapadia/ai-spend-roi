@@ -1,4 +1,4 @@
-"""Sign-off: a human's attestation that a month's memo numbers were reviewed (plan D-18).
+"""Sign-off: a human's attestation that a month's memo numbers were reviewed.
 
 `signoffs/<month>.yaml` holds the reviewer's name, the date, the content hash of the built
 site and the provenance ids of the numbers reviewed. The file by itself proves nothing, because

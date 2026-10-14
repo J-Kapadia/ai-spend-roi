@@ -1,4 +1,4 @@
-"""Socket guard: no test may open a network connection (plan D-12)."""
+"""Socket guard: no test may open a network connection."""
 
 import socket
 

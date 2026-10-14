@@ -1,4 +1,4 @@
-"""Provenance records (plan D-17): a named dbt model plus a stored SQL predicate,
+"""Provenance records: a named dbt model plus a stored SQL predicate,
 with row count and checksum. `prov_id` is deterministic, so the memo is byte-identical
 across rebuilds; build facts live in the separate, append-only `prov_build`.
 """

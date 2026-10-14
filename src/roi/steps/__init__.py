@@ -1,4 +1,4 @@
-"""Build steps: a registry of one module per step (plan D-23).
+"""Build steps: a registry of one module per step.
 
 A step module defines `NAME`, `ORDER` and `run(ctx)`. `roi build` runs them in ORDER.
 Each step opens and closes its own warehouse connection, because dbt must run while

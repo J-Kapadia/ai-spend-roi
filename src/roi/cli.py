@@ -1,4 +1,4 @@
-"""The `roi` entry point: a click group over lazily loaded command modules (plan D-23).
+"""The `roi` entry point: a click group over lazily loaded command modules.
 
 Commands are one module each in `roi.commands`. They are discovered with `pkgutil`
 without importing and imported only when invoked, so a `roi build` process never loads

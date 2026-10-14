@@ -139,7 +139,7 @@ The fixture has no `too_recent` cohort when read through m10, so those expectati
 
 ## Why a two-way fixed-effects fit is wrong here
 
-The planted effect averaged over the 18 treated team-months is 0.099722. The two-way fixed-effects coefficient on a treated indicator is 0.062828, 37.0% below it: already-treated teams, whose effects are still growing, serve as controls for the later cohorts. The group-time estimator above uses only teams not yet treated and never-treated teams as controls; its team effects (0.157143, 0.094306, 0.055300) sit within about 1.5 standard errors of the planted team averages (0.1600, 0.0875, 0.0300).
+The effect planted, averaged over the 18 treated team-months, is 0.099722. The two-way fixed-effects coefficient on a treated indicator is 0.062828, 37.0% below it: already-treated teams, whose effects are still growing, serve as controls for the later cohorts. The group-time estimator above uses only teams not yet treated and never-treated teams as controls; its team effects (0.157143, 0.094306, 0.055300) sit within about 1.5 standard errors of planted team averages (0.1600, 0.0875, 0.0300).
 
 ## Two scales
 
@@ -147,7 +147,7 @@ The planted effect averaged over the 18 treated team-months is 0.099722. The two
 
 ## panel_pretrend.csv
 
-Four teams, ten months: `team_x` (g = m6), `team_p` (g = m7), `team_n1`, `team_n2` (never treated). `team_x` drifts upward by 0.05 a month relative to the others before its rollout (its Y in m1 to m4 is lowered by 0.20, 0.15, 0.10, 0.05 and is unchanged in m5, the base month), on top of the same kind of wobble as above (sd 0.03). Its four pre-period leads against the three valid controls (`team_p`, `team_n1`, `team_n2`) are -0.256667, -0.247333, -0.141333, -0.190667; Σ_pre is positive definite, the Wald statistic aᵀΣ⁻¹a / 4 is 7.899295 against F(4, 3) whose 90% point is 5.342644 (p = 0.060514), so `team_x` is `unmeasured` with reason `pre_trend` and has no effect or interval. `team_p` (p = 0.550) stays `measured`. A clean linear drift would make Σ_pre non-positive-definite (the variance of the levels of d would exceed the variance of its changes) and the test untestable, so the planted drift here is a drift with enough wobble for Σ_pre to be positive definite.
+Four teams, ten months: `team_x` (g = m6), `team_p` (g = m7), `team_n1`, `team_n2` (never treated). `team_x` drifts upward by 0.05 a month relative to the others before its rollout (its Y in m1 to m4 is lowered by 0.20, 0.15, 0.10, 0.05 and is unchanged in m5, the base month), on top of the same kind of wobble as above (sd 0.03). Its four pre-period leads against the three valid controls (`team_p`, `team_n1`, `team_n2`) are -0.256667, -0.247333, -0.141333, -0.190667; Σ_pre is positive definite, the Wald statistic aᵀΣ⁻¹a / 4 is 7.899295 against F(4, 3) whose 90% point is 5.342644 (p = 0.060514), so `team_x` is `unmeasured` with reason `pre_trend` and has no effect or interval. `team_p` (p = 0.550) stays `measured`. A clean linear drift would make Σ_pre non-positive-definite (the variance of the levels of d would exceed the variance of its changes) and the test untestable, so the drift planted here is a drift with enough wobble for Σ_pre to be positive definite.
 
 ## panel_nocomparison.csv
 

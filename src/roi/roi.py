@@ -139,7 +139,7 @@ def _value(team: str, raw: dict) -> Value | None:
     if all(p is None for p in parts):
         return None
     if any(p is None for p in parts):
-        return None  # partly entered counts as not entered; the gate names the team
+        return None  # partly entered counts as not entered; the build names the team
     try:
         low, base, high = (float(p) for p in parts)
     except (TypeError, ValueError):

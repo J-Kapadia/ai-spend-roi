@@ -1,6 +1,6 @@
 # Calibration table: the published range each team's planted effect must sit inside.
 #
-# No figure enters this file until a person has checked it against the paper (gate G1); the
+# No figure enters this file until a person has checked it against the paper; the
 # table stays empty until then. One row per team that has a planted effect (not the control):
 #
 #   team_id        the team's id in config/gen.yaml

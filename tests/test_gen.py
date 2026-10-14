@@ -161,7 +161,7 @@ def test_truth_holds_the_planted_effects(work, cfg):
     spec = next(t for t in cfg.teams if t.team_id == "support")
     effects = support["planted_effect_by_month"]
     assert list(effects)[0] == "2025-07" and list(effects)[-1] == "2026-04"
-    # At the target spend the planted effect equals ln(1 + figure) and the curve is at 63% of its asymptote.
+    # At the target spend a planted effect equals ln(1 + figure) and the curve is at 63% of its asymptote.
     assert effects["2025-09"] == pytest.approx(math.log1p(spec.effect_at_target))
     assert effects["2026-04"] == pytest.approx(effects["2025-09"])
     assert effects["2025-07"] < effects["2025-08"] < effects["2025-09"]
@@ -186,21 +186,21 @@ def test_noise_of_unmeasured_teams_is_the_median_of_the_measured(cfg):
     assert sds["platform_engineering"] == sds["people_operations"] == median
 
 
-def test_real_config_is_gated_on_the_empty_table():
+def test_real_config_with_the_empty_table_exits_4():
     assert yaml.safe_load(REAL_CONFIG.read_text())["teams"] == []
     result = CliRunner().invoke(main, ["gen", "--config", str(REAL_CONFIG)])
     assert result.exit_code == 4
-    assert "G1" in result.output
+    assert "fill the team table in config/gen.yaml" in result.output
 
 
-def test_an_incomplete_row_exits_4_naming_the_gate(tmp_path):
+def test_an_incomplete_row_exits_4_asking_for_the_table(tmp_path):
     raw = yaml.safe_load(FIXTURE.read_text())
     del raw["teams"][0]["noise_sd"]
     path = tmp_path / "gen.yaml"
     path.write_text(yaml.safe_dump(raw))
     result = gen(tmp_path / "w", config_path=path)
     assert result.exit_code == 4
-    assert "noise_sd" in result.output and "G1" in result.output
+    assert "noise_sd" in result.output and "config/gen.yaml" in result.output
     assert not (tmp_path / "w").exists()
 
 

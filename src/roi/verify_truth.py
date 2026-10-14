@@ -1,9 +1,9 @@
-"""Verification group (b): the planted team effect lies inside the 95% interval.
+"""Verification group (b): a planted team effect lies inside the 95% interval.
 
 This is the only module that reads the truth file, and it is reachable only from the
 `roi verify` command and from tests; no pipeline step, command or other module imports it.
 
-The estimand is the equal-weight mean of the planted effects over the months of the team's
+The estimand is the equal-weight mean of the effects planted over the months of the team's
 group-time cells (the months its team effect averages), which for a team with a comparison in
 every post month is its post-rollout months up to the through month. Planted effects are in log
 points and signed by direction, the scale of the estimate.

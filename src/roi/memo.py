@@ -1,4 +1,4 @@
-"""Render the static memo site and check that every number in it resolves (plan D-14, D-17).
+"""Render the static memo site and check that every number in it resolves.
 
 The memo reads only the result tables and the named marts. Every number in it is tagged
 `data-prov="<id>"`, wrapped in an anchor to `site/prov/<id>.html`, and backed by a provenance
@@ -25,7 +25,7 @@ from roi.steps import roi as roi_step
 from roi.steps.provenance import SPEND_NAME
 from roi.workdir import RoiError, WorkDir
 
-# A "number" in the memo body (D-17).
+# A "number" in the memo body.
 NUMBER = re.compile(r"[$-]?\d[\d,]*(\.\d+)?%?")
 ROW_CAP = 200
 VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}

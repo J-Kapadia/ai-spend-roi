@@ -7,7 +7,7 @@ Model, in the direction-normalised log outcome Y = direction * ln(outcome):
     Y[team, t] = direction * ln(baseline) + shock[t] + effect[team, t] + noise[team, t]
 `shock` is one draw per month common to every team; `noise` is per team-month. A team's
 spend per head ramps linearly over its first `ramp_months` of rollout to its target and has
-no other noise. The planted effect is A * (1 - exp(-x / k)) with x the month's spend per
+no other noise. The effect planted is A * (1 - exp(-x / k)) with x the month's spend per
 head, k the target spend per head, and A fixed so that the effect at the target equals
 ln(1 + effect_at_target).
 """

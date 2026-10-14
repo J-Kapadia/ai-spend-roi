@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Definition of Done: the commands that must pass before a bead may close.
-# NEEDLE runs this on a clean `git archive HEAD` extraction (committed state only).
+# Definition of Done: the commands that must pass before a change is accepted.
+# Run it on a clean `git archive HEAD` extraction to check the committed state only.
 #
-#   definition-of-done.sh --fast   what every bead close runs: shell syntax, the scrub-check tree
+#   definition-of-done.sh --fast   what every change runs: shell syntax, the scrub-check tree
 #                                  part and its tests, the fast pytest tests, and a toy build
 #                                  (which runs the dbt models and their tests).
 #   definition-of-done.sh          the fast tier plus the tests marked `slow`.

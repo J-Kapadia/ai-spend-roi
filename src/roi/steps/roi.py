@@ -2,7 +2,7 @@
 
 Writes `roi_team` and `roi_sensitivity` in one transaction. A team that is not `measured`
 gets no row. The value per unit comes from the roi config; a measured team that the config
-lists without values stops the build with exit 4 (the author enters them at gate G1), and a
+lists without values stops the build with exit 4 (the author fills them in), and a
 measured team the config does not list gets no row (the config describes one company).
 """
 
@@ -76,7 +76,7 @@ def rows(through: str, inputs: list[roi_calc.TeamInput], cfg: roi_calc.RoiConfig
     missing = [i.team_id for i in listed if cfg.teams[i.team_id].value is None]
     if missing:
         raise RoiError(
-            4, f"no value per unit for {', '.join(missing)} in {cfg.path}: the author enters them at gate G1"
+            4, f"no value per unit for {', '.join(missing)} in {cfg.path}: fill in the value per unit there"
         )
     team_rows, sens_rows = [], []
     for i in listed:

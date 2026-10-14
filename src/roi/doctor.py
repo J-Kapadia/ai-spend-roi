@@ -1,4 +1,4 @@
-"""Health checks for `roi doctor` (plan §13.3): `--tree` needs only an extraction, `--release`
+"""Health checks for `roi doctor`: `--tree` needs only an extraction, `--release`
 adds the checks that need `.git`. Each check is ok, warn, skip (its input does not exist here,
 and it says what) or fail; only a fail makes the command exit non-zero.
 
@@ -276,7 +276,7 @@ def release(work: WorkDir, repo: Path = REPO, skip: frozenset[str] = frozenset()
         hook_installed(work.root),
         prereg_tag(work.root),
         signing(work),
-        Check("checkpoint", SKIP, "this repository keeps no tracker checkpoint"),
+        Check("checkpoint", SKIP, "this repository keeps no checkpoint"),
         clean_tree(work.root),
     ]
     checks.append(signoff_present(work) if work.warehouse_db.exists() else Check("signoff", SKIP, "no warehouse"))

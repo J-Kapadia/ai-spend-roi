@@ -1,7 +1,7 @@
 # Generator config for Beta Co, the synthetic company.
 #
-# `roi gen` reads this file. The `teams` table below is entered by the author at gate G1; while
-# it is empty `roi gen` exits 4 naming that gate. Each row needs these fields:
+# `roi gen` reads this file. The `teams` table below is filled in by the author; while
+# it is empty `roi gen` exits 4 and asks for it to be filled. Each row needs these fields:
 #
 #   team_id, name, metric_id, unit_label
 #   direction                      1 if higher output is better, -1 if lower is better
@@ -30,7 +30,7 @@ dgp:
   input_cost_share: 0.7         # share of cost that is input tokens, to derive token counts
   gl_account: "6100"            # the AI-usage ledger account
   noise_accounts: ["6200", "6300"]
-  target_ai_share_of_payroll: null   # entered at gate G1; checked against the table by its test
+  target_ai_share_of_payroll: null   # filled in by the author; checked against the table by its test
 
 # Fictional providers and models, with a price per million tokens in cents.
 prices:

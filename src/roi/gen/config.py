@@ -1,7 +1,7 @@
 """Load and validate `config/gen.yaml`: the seed, the DGP parameters, the price table and the Beta Co table.
 
-The Beta Co table is entered by the author at gate G1. While it is empty, or a row lacks a
-field, loading fails with exit 4 naming the gate, so the generator never invents numbers.
+The author fills in the Beta Co table. While it is empty, or a row lacks a field, loading
+fails with exit 4 and says to fill it in, so the generator never invents numbers.
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ import yaml
 
 from roi.workdir import RoiError
 
-GATE = "G1"
 KINDS = ("additive", "team_level")
 
 TEAM_FIELDS = (
@@ -91,17 +90,17 @@ def month_start(month: str) -> date:
     return date(int(month[:4]), int(month[5:]), 1)
 
 
-def _gate(message: str) -> RoiError:
-    return RoiError(4, f"{message}; the author enters the Beta Co table at gate {GATE}")
+def _unfilled(message: str) -> RoiError:
+    return RoiError(4, f"{message}; fill the team table in config/gen.yaml")
 
 
 def _team(raw: dict, index: int) -> TeamSpec:
     label = raw.get("team_id", f"row {index + 1}")
     missing = [f for f in TEAM_FIELDS if raw.get(f) is None]
     if missing:
-        raise _gate(f"team {label} has no value for {', '.join(missing)}")
+        raise _unfilled(f"team {label} has no value for {', '.join(missing)}")
     if "rollout_month" not in raw:
-        raise _gate(f"team {label} has no rollout_month (use null for the control team)")
+        raise _unfilled(f"team {label} has no rollout_month (use null for the control team)")
     if raw["kind"] not in KINDS:
         raise RoiError(2, f"team {label}: kind must be one of {KINDS}")
     if raw["direction"] not in (1, -1):
@@ -138,7 +137,7 @@ def load(path: Path) -> GenConfig:
 
     rows = raw.get("teams") or []
     if not rows:
-        raise _gate(f"{path}: the Beta Co table is empty")
+        raise _unfilled(f"{path}: the Beta Co table is empty")
     teams = tuple(_team(r, i) for i, r in enumerate(rows))
     ids = [t.team_id for t in teams]
     if len(set(ids)) != len(ids) or "unassigned" in ids:

@@ -1,6 +1,6 @@
 """Load and check `config/calibration.yaml`: one row per team, the published range its planted effect must sit in.
 
-The file holds no figure until a person has read the paper (gate G1). The schema is checked on
+The file holds no figure until a person has read the paper. The schema is checked on
 every load; the per-row rules (a `verified_on` date, a numeric range, a source) apply to every
 row that exists, so an empty `rows` list is a valid file and a half-filled one is not.
 """
@@ -55,7 +55,7 @@ def schema_problems(raw: dict) -> list[str]:
     problems = [f"unknown top-level key {k!r}" for k in raw if k not in TOP_KEYS]
     rows = raw.get("rows")
     if not isinstance(rows, list):
-        return problems + ["`rows` must be a list (empty until gate G1)"]
+        return problems + ["`rows` must be a list (empty until a person has checked the paper)"]
     for i, row in enumerate(rows, 1):
         label = f"row {i}"
         if not isinstance(row, dict):

@@ -152,7 +152,7 @@ def test_twfe_is_biased_on_the_fixture_and_the_estimator_is_not(small):
     true_avg = sum(planted) / len(planted)
     twfe = ref.twfe_coefficient(y, rollout)
     assert abs(twfe - true_avg) / true_avg > 0.25, (twfe, true_avg)
-    # The estimator's team effects stay within 1.5 standard errors of the planted team averages.
+    # The estimator's team effects stay within 1.5 standard errors of planted team averages.
     for team, th, g in (("team_a", 0.04, 4), ("team_b", 0.025, 5), ("team_c", 0.01, 6)):
         n = 10 - g + 1
         planted_team = th * (n + 1) / 2

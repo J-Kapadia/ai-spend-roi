@@ -14,11 +14,11 @@ Status: work in progress. The commands below are the product's interface.
 
 The memo page answers them in that order, and every figure on it is a link to a page that states the table, the predicate, the row count and the checksum behind it, with the rows themselves when there are few enough to show.
 
-## What the planted effects do and do not show
+## What planted effects do and do not show
 
 The data is synthetic. The generator plants a known effect of AI in each team, chosen within ranges taken from published studies, and writes the answer to a file that the method never reads. Only the verification command opens it.
 
-What recovering the planted effects shows:
+What recovering planted effects shows:
 
 - The estimator, the return calculation and the allocation work as specified: given a company whose teams adopted AI tools at different times and one team that never did, the method returns each team's planted effect inside its stated interval, in the share of runs the interval level promises.
 - The method refuses where it should: a team with no before period, too few months since rollout, no comparison team, or a trend that already differed before rollout is reported as unmeasured, with no return figure.
@@ -59,7 +59,7 @@ The memo is written to `site/` under the work directory. Money is kept in intege
 |---|---|
 | `roi gen` | Generate the books and the answer file from the seed |
 | `roi build` | Load the books, run the dbt models and tests, estimate, compute returns, curves, allocation, agenda and provenance |
-| `roi verify --through <month>` | Ledger tie, interval coverage against the planted effects, unmeasured discipline |
+| `roi verify --through <month>` | Ledger tie, interval coverage against planted effects, unmeasured discipline |
 | `roi memo --month <month> [--check]` | Build the static site and, with `--check`, re-run every number's predicate and compare its row count and checksum |
 | `roi explain <id>` | Print the provenance record behind one number (the id in its `data-prov` attribute) and re-check its rows |
 | `roi signoff --month <month>` | A person records that they reviewed the month's memo. It refuses a non-interactive run |
@@ -77,7 +77,7 @@ uv run pytest -q
 
 ## Verifying the pre-registration and sign-offs
 
-The seed, the planted effects and the thresholds are fixed before the estimator is run, and their hash is in `config/prereg.sha256`. Each registration is a signed tag `prereg-v<n>`, and each monthly sign-off is a signed tag `signoff-<month>` on the commit that added `signoffs/<month>.yaml`. To check one:
+The seed, the effects planted and the thresholds are fixed before the estimator is run, and their hash is in `config/prereg.sha256`. Each registration is a signed tag `prereg-v<n>`, and each monthly sign-off is a signed tag `signoff-<month>` on the commit that added `signoffs/<month>.yaml`. To check one:
 
 ```
 git show <tag>:config/allowed-signers > signers
