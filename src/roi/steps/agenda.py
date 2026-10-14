@@ -10,6 +10,7 @@ from __future__ import annotations
 import click
 import duckdb
 
+from roi.db import connect as db_connect
 from roi import agenda, alloc
 from roi import steps
 from roi.steps import BuildContext
@@ -34,7 +35,7 @@ def rows(con: duckdb.DuckDBPyConnection, through: str, cfg: alloc.Config) -> lis
 
 def run(ctx: BuildContext) -> None:
     cfg = alloc.load_config(alloc.config_path(ctx.work))
-    con = duckdb.connect(str(ctx.db))
+    con = db_connect(ctx.db)
     try:
         out: list[tuple] = []
         if cfg is None:

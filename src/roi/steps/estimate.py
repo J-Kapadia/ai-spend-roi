@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from datetime import date
 
-import duckdb
 
+from roi.db import connect as db_connect
 from roi import estimator, steps
 from roi.steps import BuildContext
 
@@ -51,7 +51,7 @@ def rows(through: str, panel: estimator.Panel) -> tuple[list, list, list]:
 
 
 def run(ctx: BuildContext) -> None:
-    con = duckdb.connect(str(ctx.db))
+    con = db_connect(ctx.db)
     try:
         att_rows, cov_rows, effect_rows = rows(ctx.through, estimator.read_panel(con, ctx.through))
         con.execute("BEGIN")

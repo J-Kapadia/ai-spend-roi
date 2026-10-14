@@ -11,8 +11,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import click
-import duckdb
 
+from roi.db import connect as db_connect
 from roi import roi as roi_calc
 from roi import steps
 from roi.steps import BuildContext
@@ -91,7 +91,7 @@ def rows(through: str, inputs: list[roi_calc.TeamInput], cfg: roi_calc.RoiConfig
 
 def run(ctx: BuildContext) -> None:
     cfg = roi_calc.load_config(config_path(ctx.work))
-    con = duckdb.connect(str(ctx.db))
+    con = db_connect(ctx.db)
     try:
         team_rows, sens_rows, unlisted = rows(ctx.through, roi_calc.read_inputs(con, ctx.through), cfg)
         con.execute("BEGIN")

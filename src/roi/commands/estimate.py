@@ -6,8 +6,8 @@ import json
 import re
 
 import click
-import duckdb
 
+from roi.db import connect as db_connect
 from roi import estimator
 from roi.workdir import RoiError, WorkDir
 
@@ -26,7 +26,7 @@ def command(work: WorkDir, through: str | None, as_json: bool) -> None:
         raise RoiError(2, f"bad month {through!r}; expected YYYY-MM")
     if not work.warehouse_db.exists():
         raise RoiError(2, f"no warehouse at {work.warehouse_db}; run `roi build` first")
-    con = duckdb.connect(str(work.warehouse_db), read_only=True)
+    con = db_connect(work.warehouse_db, read_only=True)
     try:
         if through is None:
             (last,) = con.execute("SELECT strftime(max(month), '%Y-%m') FROM fct_team_month").fetchone()

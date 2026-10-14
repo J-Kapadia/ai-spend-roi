@@ -33,6 +33,7 @@ from typing import Iterator
 import click
 import duckdb
 
+from roi.db import connect as db_connect
 from roi import steps, verify_books
 from roi.gen import manifest
 from roi.steps import load
@@ -84,7 +85,7 @@ def content_hash(db: Path) -> str:
 
     A DuckDB file is not byte-reproducible, so two warehouses are compared by content, never by bytes.
     """
-    con = duckdb.connect(str(db), read_only=True)
+    con = db_connect(db, read_only=True)
     try:
         h = hashlib.sha256()
         tables = [t for (t,) in con.execute(
@@ -242,7 +243,7 @@ def check_expected(con: duckdb.DuckDBPyConnection, month: str) -> None:
 def ingest(work: WorkDir, db: Path, month: str, digests: dict[str, str]) -> None:
     """Append the month's files to the `raw_*` tables of `db` and record them in `rollforward_ingest`."""
     files = incoming_files(work, month)
-    con = duckdb.connect(str(db))
+    con = db_connect(db)
     try:
         con.execute("BEGIN")
         for name, file in files.items():
@@ -266,7 +267,7 @@ def advance(work: WorkDir, db: Path, month: str) -> None:
     Raises RoiError: 2 for a month out of order or files missing, 3 for a manifest, dbt or tie failure.
     """
     check_month(month)
-    con = duckdb.connect(str(db), read_only=True)
+    con = db_connect(db, read_only=True)
     try:
         check_expected(con, month)
     finally:
@@ -281,7 +282,7 @@ def advance(work: WorkDir, db: Path, month: str) -> None:
         click.echo(f"step {step.NAME}")
         step.run(ctx)
         if step.NAME == "dbt":
-            con = duckdb.connect(str(db), read_only=True)
+            con = db_connect(db, read_only=True)
             try:
                 verify_books.check_gl_tie(con, month)
             finally:
@@ -297,7 +298,7 @@ def rollforward(work: WorkDir, month: str) -> None:
     with locked(work):
         promote_pending(work)
         before = check_marker(work)
-        con = duckdb.connect(str(work.warehouse_db), read_only=True)
+        con = db_connect(work.warehouse_db, read_only=True)
         try:
             recorded = ingested(con, month)
             if recorded:

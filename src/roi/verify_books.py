@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 
 import duckdb
 
+from roi.db import connect as db_connect
 from roi import estimator
 from roi.workdir import RoiError, WorkDir
 
@@ -63,7 +64,7 @@ class TieReport:
 def open_warehouse(work: WorkDir) -> duckdb.DuckDBPyConnection:
     if not work.warehouse_db.exists():
         raise RoiError(2, f"no warehouse at {work.warehouse_db}; run `roi build` first")
-    return duckdb.connect(str(work.warehouse_db), read_only=True)
+    return db_connect(work.warehouse_db, read_only=True)
 
 
 def _gl_account(con: duckdb.DuckDBPyConnection) -> str:

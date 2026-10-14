@@ -6,8 +6,8 @@ import subprocess
 import uuid
 from datetime import datetime, timezone
 
-import duckdb
 
+from roi.db import connect as db_connect
 from roi import prov, steps
 from roi.steps import BuildContext
 
@@ -26,7 +26,7 @@ def _git_sha() -> str:
 
 
 def run(ctx: BuildContext) -> None:
-    con = duckdb.connect(str(ctx.db))
+    con = db_connect(ctx.db)
     try:
         predicate = f"month = DATE '{ctx.through}-01'"
         _, rows = prov.source_rows(con, "fct_team_month", predicate)

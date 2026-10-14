@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import duckdb
 
+from roi.db import connect as db_connect
 from roi import curve
 from roi import steps
 from roi.steps import BuildContext
@@ -35,7 +36,7 @@ def rows(con: duckdb.DuckDBPyConnection, through: str) -> list[tuple]:
 
 
 def run(ctx: BuildContext) -> None:
-    con = duckdb.connect(str(ctx.db))
+    con = db_connect(ctx.db)
     try:
         fitted = rows(con, ctx.through)
         con.execute("BEGIN")

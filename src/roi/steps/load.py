@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 
-import duckdb
 
+from roi.db import connect as db_connect
 from roi.steps import BuildContext
 from roi.workdir import RoiError, WorkDir
 
@@ -60,7 +60,7 @@ def run(ctx: BuildContext) -> None:
     for table in TABLES:
         if not (ctx.work.books / f"{table}.csv").exists():
             raise RoiError(2, f"no books at {ctx.work.books}: missing {table}.csv; run `roi gen` or pass --config")
-    con = duckdb.connect(str(ctx.db))
+    con = db_connect(ctx.db)
     try:
         # The settings the models and the verification read back, such as the ledger account of AI usage.
         con.execute("CREATE TABLE roi_settings(key VARCHAR, value VARCHAR)")

@@ -34,6 +34,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 
+from roi.db import connect as db_connect
 from roi import curve
 from roi.workdir import RoiError, WorkDir
 
@@ -344,11 +345,9 @@ FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
 
 
 def open_readonly(work: WorkDir):
-    import duckdb
-
     if not work.warehouse_db.exists():
         raise RoiError(2, f"no warehouse at {work.warehouse_db}; run `roi build` first")
-    return duckdb.connect(str(work.warehouse_db), read_only=True)
+    return db_connect(work.warehouse_db, read_only=True)
 
 
 def last_month(con) -> str:
