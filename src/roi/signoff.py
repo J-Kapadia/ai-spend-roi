@@ -104,7 +104,10 @@ def _git(root: Path, *args: str, config: tuple[str, ...] = ()) -> subprocess.Com
 
 
 def in_git(root: Path) -> bool:
-    return _git(root, "rev-parse", "--git-dir").returncode == 0
+    """True when `root` is itself the top of a git work tree. A work dir nested inside some other
+    repository has no .git of its own, and that repository's history is not its sign-off history."""
+    top = _git(root, "rev-parse", "--show-toplevel")
+    return top.returncode == 0 and Path(top.stdout.strip()).resolve() == root.resolve()
 
 
 def verify(work: WorkDir, month: str, signers: Path | None = None, require_hardware: bool = True) -> list[str]:
