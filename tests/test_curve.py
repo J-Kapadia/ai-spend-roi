@@ -2,11 +2,11 @@
 
 import math
 
-import duckdb
 import numpy as np
 import pytest
 from scipy import optimize
 
+from conftest import connect
 from roi import curve
 
 A_TRUE, K_TRUE = 0.30, 5000.0
@@ -169,7 +169,7 @@ def test_the_effect_is_concave_over_the_capped_range():
 
 @pytest.fixture
 def con():
-    c = duckdb.connect(":memory:")
+    c = connect(":memory:")
     c.execute(
         "CREATE TABLE fct_team_month(team_id VARCHAR, month DATE, spend_per_head_cents DOUBLE, headcount INTEGER)"
     )

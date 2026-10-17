@@ -3,10 +3,10 @@
 import shutil
 from pathlib import Path
 
-import duckdb
 import pytest
 from click.testing import CliRunner
 
+from conftest import connect
 from roi.cli import main
 
 FIXTURE = Path(__file__).parent / "fixtures" / "gen_fixture.yaml"
@@ -36,7 +36,7 @@ def copy(built, tmp_path):
 
 
 def edit(work, sql, *params):
-    con = duckdb.connect(str(work / "warehouse" / "roi.duckdb"))
+    con = connect(str(work / "warehouse" / "roi.duckdb"))
     try:
         con.execute(sql, list(params))
     finally:
@@ -44,7 +44,7 @@ def edit(work, sql, *params):
 
 
 def fetch(work, sql, *params):
-    con = duckdb.connect(str(work / "warehouse" / "roi.duckdb"), read_only=True)
+    con = connect(str(work / "warehouse" / "roi.duckdb"), read_only=True)
     try:
         return con.execute(sql, list(params)).fetchall()
     finally:

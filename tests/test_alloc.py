@@ -7,11 +7,11 @@ import os
 import shutil
 from pathlib import Path
 
-import duckdb
 import numpy as np
 import pytest
 from click.testing import CliRunner
 
+from conftest import connect
 import roi.commands.allocate as allocate_command
 from roi import alloc, curve
 from roi.cli import main
@@ -274,7 +274,7 @@ def config_text(skip=()):
 def build_company(db: Path, noise=0.003, seed=7):
     rng = np.random.default_rng(seed)
     shock = rng.normal(0.0, 0.03, len(MONTHS))
-    con = duckdb.connect(str(db))
+    con = connect(str(db))
     con.execute(
         "CREATE TABLE fct_team_month(team_id VARCHAR, month DATE, outcome DOUBLE, y_log DOUBLE, spend_cents BIGINT,"
         " spend_per_head_cents DOUBLE, headcount INTEGER, rollout_month DATE)"
@@ -315,7 +315,7 @@ def company(tmp_path_factory):
 
 
 def rows_of(work, sql):
-    con = duckdb.connect(str(work.warehouse_db), read_only=True)
+    con = connect(str(work.warehouse_db), read_only=True)
     try:
         return con.execute(sql).fetchall()
     finally:

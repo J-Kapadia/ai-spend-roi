@@ -7,11 +7,11 @@ from dataclasses import replace
 from pathlib import Path
 from statistics import NormalDist
 
-import duckdb
 import pytest
 from click.testing import CliRunner
 from scipy import stats
 
+from conftest import connect
 import roi.commands.agenda as agenda_command
 from roi import agenda, alloc, estimator
 from roi.cli import main
@@ -261,7 +261,7 @@ def toy(tmp_path_factory):
 
 
 def test_the_toy_build_writes_an_agenda_item_for_the_unmeasured_team_only(toy):
-    con = duckdb.connect(str(toy / "warehouse" / "roi.duckdb"), read_only=True)
+    con = connect(str(toy / "warehouse" / "roi.duckdb"), read_only=True)
     items = con.execute("SELECT team_id, design, rho, baseline_basis, sigma FROM agenda_item").fetchall()
     effects = dict(con.execute("SELECT team_id, status FROM est_team_effect").fetchall())
     con.close()

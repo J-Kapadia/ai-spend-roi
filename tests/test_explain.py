@@ -3,11 +3,11 @@
 import json
 import shutil
 
-import duckdb
 import pytest
 import yaml
 from click.testing import CliRunner
 
+from conftest import connect
 from roi import memo
 from roi.cli import main
 from roi.workdir import WorkDir
@@ -102,7 +102,7 @@ def test_an_unknown_or_too_short_id_is_a_usage_error(built):
 
 def test_a_changed_source_row_fails_the_recheck_with_exit_1(copy):
     pid = ids(copy)["company_ai_spend_usd"]
-    con = duckdb.connect(str(copy / "warehouse" / "roi.duckdb"))
+    con = connect(str(copy / "warehouse" / "roi.duckdb"))
     con.execute("UPDATE fct_team_month SET spend_cents = spend_cents + 1 WHERE team_id = 'alpha' AND month = DATE '2025-06-01'")
     con.close()
     result = roi(copy, "explain", pid)

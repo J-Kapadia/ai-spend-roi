@@ -2,10 +2,10 @@
 
 import shutil
 
-import duckdb
 import pytest
 from click.testing import CliRunner
 
+from conftest import connect
 from roi.cli import main
 from roi.memo import check_site
 from roi.workdir import RoiError, WorkDir
@@ -54,7 +54,7 @@ def test_build_is_deterministic(built, tmp_path):
 
 
 def test_books_tie_to_the_ledger_in_cents(built):
-    con = duckdb.connect(str(built / "warehouse" / "roi.duckdb"), read_only=True)
+    con = connect(str(built / "warehouse" / "roi.duckdb"), read_only=True)
     diff = con.execute(
         "SELECT count(*) FROM (SELECT team_id, strftime(usage_date, '%Y-%m') AS m, sum(cost_cents) AS s"
         " FROM raw_ai_spend GROUP BY 1, 2) a FULL JOIN (SELECT cost_center AS team_id, period AS m,"
@@ -65,7 +65,7 @@ def test_books_tie_to_the_ledger_in_cents(built):
 
 
 def test_edited_source_rows_fail_the_check(copy):
-    con = duckdb.connect(str(copy / "warehouse" / "roi.duckdb"))
+    con = connect(str(copy / "warehouse" / "roi.duckdb"))
     con.execute("UPDATE fct_team_month SET spend_cents = spend_cents + 1 WHERE team_id = 'alpha' AND month = DATE '2025-06-01'")
     con.close()
     result = roi(copy, "memo", "--month", MONTH, "--check")
@@ -77,7 +77,7 @@ def test_hand_edited_number_fails_the_check(copy):
     assert roi(copy, "memo", "--month", MONTH).exit_code == 0
     page = copy / "site" / "index.html"
     page.write_text(page.read_text().replace("$", "$9", 1))
-    con = duckdb.connect(str(copy / "warehouse" / "roi.duckdb"), read_only=True)
+    con = connect(str(copy / "warehouse" / "roi.duckdb"), read_only=True)
     with pytest.raises(RoiError, match="records"):
         check_site(WorkDir(copy), MONTH, con)
 
@@ -86,7 +86,7 @@ def test_untagged_number_fails_the_check(copy):
     assert roi(copy, "memo", "--month", MONTH).exit_code == 0
     page = copy / "site" / "index.html"
     page.write_text(page.read_text().replace("</ul>", "</ul><p>We saved 7 hours.</p>"))
-    con = duckdb.connect(str(copy / "warehouse" / "roi.duckdb"), read_only=True)
+    con = connect(str(copy / "warehouse" / "roi.duckdb"), read_only=True)
     with pytest.raises(RoiError, match="untagged number"):
         check_site(WorkDir(copy), MONTH, con)
 

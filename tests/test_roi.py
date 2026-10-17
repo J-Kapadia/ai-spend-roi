@@ -4,11 +4,11 @@ import math
 import shutil
 from pathlib import Path
 
-import duckdb
 import numpy as np
 import pytest
 from click.testing import CliRunner
 
+from conftest import connect
 from roi import alloc
 from roi import roi as calc
 from roi.cli import main
@@ -275,7 +275,7 @@ def built(tmp_path_factory):
 
 
 def fetch(work, sql, *params):
-    con = duckdb.connect(str(work / "warehouse" / "roi.duckdb"), read_only=True)
+    con = connect(str(work / "warehouse" / "roi.duckdb"), read_only=True)
     try:
         return con.execute(sql, list(params)).fetchall()
     finally:

@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from conftest import connect
 from roi import doctor
 from roi.cli import main
 from roi.workdir import RoiError, WorkDir
@@ -125,10 +126,8 @@ def test_dbt_passes_on_a_copy_and_leaves_the_published_file_alone(built):
 
 
 def test_the_tie_holds_on_a_toy_build_and_fails_on_a_changed_ledger(copy):
-    import duckdb
-
     assert doctor.tie_holds(WorkDir(copy)).status == doctor.OK
-    con = duckdb.connect(str(copy / "warehouse" / "roi.duckdb"))
+    con = connect(str(copy / "warehouse" / "roi.duckdb"))
     con.execute("UPDATE raw_gl_journal SET debit_cents = debit_cents + 1 WHERE entry_id = (SELECT min(entry_id) FROM raw_gl_journal"
                 " WHERE debit_cents > 0 AND account_code = (SELECT value FROM roi_settings WHERE key = 'gl_account'))")
     con.close()

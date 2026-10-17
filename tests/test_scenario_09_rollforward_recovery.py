@@ -6,10 +6,10 @@ import hashlib
 import shutil
 from pathlib import Path
 
-import duckdb
 import pytest
 from click.testing import CliRunner
 
+from conftest import connect
 from roi import rollforward
 from roi.cli import main
 from roi.gen import manifest
@@ -36,7 +36,7 @@ def file_digest(path: Path) -> str:
 
 
 def output_months(work) -> set[str]:
-    con = duckdb.connect(str(published(work)), read_only=True)
+    con = connect(str(published(work)), read_only=True)
     try:
         return {m for (m,) in con.execute("SELECT DISTINCT strftime(month, '%Y-%m') FROM raw_output").fetchall()}
     finally:
@@ -103,7 +103,7 @@ def test_the_retry_with_the_corrected_file_succeeds_and_the_repeat_is_a_no_op(sc
     retry = roi(work, "rollforward", "--month", MONTH)
     assert retry.exit_code == 0, retry.output
     assert "2026-04" in output_months(work)
-    con = duckdb.connect(str(published(work)), read_only=True)
+    con = connect(str(published(work)), read_only=True)
     try:
         recorded = dict(con.execute("SELECT file, sha256 FROM rollforward_ingest").fetchall())
     finally:
@@ -117,7 +117,7 @@ def test_the_retry_with_the_corrected_file_succeeds_and_the_repeat_is_a_no_op(sc
     assert "already ingested, identical" in repeat.output
     assert rollforward.content_hash(published(work)) == after
     # a month once, not twice
-    con = duckdb.connect(str(published(work)), read_only=True)
+    con = connect(str(published(work)), read_only=True)
     try:
         assert con.execute("SELECT count(*) FROM rollforward_ingest").fetchone()[0] == 4
         assert con.execute("SELECT count(*) FROM raw_output WHERE month = DATE '2026-04-01'").fetchone()[0] == 8

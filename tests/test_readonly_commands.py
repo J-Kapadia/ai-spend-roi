@@ -3,10 +3,10 @@ of the file is the same after each run."""
 
 import hashlib
 
-import duckdb
 import pytest
 from click.testing import CliRunner
 
+from conftest import connect
 from roi.cli import main
 
 ROI_YAML = """
@@ -20,7 +20,7 @@ value_per_unit:
 
 def content_hash(db) -> str:
     """SHA-256 over every table except prov_build, in table-name order, rows ordered by all columns."""
-    con = duckdb.connect(str(db), read_only=True)
+    con = connect(str(db), read_only=True)
     try:
         h = hashlib.sha256()
         tables = [t for (t,) in con.execute(
@@ -66,7 +66,7 @@ def test_the_command_leaves_the_content_hash_unchanged(built, args):
 def test_the_commands_do_not_need_a_write_lock(built):
     """A reader holding the file open does not stop them, and they work on a read-only file."""
     db = built / "warehouse" / "roi.duckdb"
-    reader = duckdb.connect(str(db), read_only=True)
+    reader = connect(str(db), read_only=True)
     try:
         for args in (["estimate"], ["allocate", "--budget", "1000"], ["agenda"]):
             out = CliRunner().invoke(main, ["--work-dir", str(built), *args])

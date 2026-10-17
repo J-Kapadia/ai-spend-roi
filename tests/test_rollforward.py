@@ -11,10 +11,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-import duckdb
 import pytest
 from click.testing import CliRunner
 
+from conftest import connect
 from roi import rollforward
 from roi.cli import main
 from roi.gen import manifest
@@ -50,7 +50,7 @@ def db(work) -> Path:
 
 
 def fetch(work, sql, *params, path=None):
-    con = duckdb.connect(str(path or db(work)), read_only=True)
+    con = connect(str(path or db(work)), read_only=True)
     try:
         return con.execute(sql, list(params)).fetchall()
     finally:
@@ -267,7 +267,7 @@ def test_a_month_missing_from_the_manifest_fails_it(base, tmp_path):
 
 def test_a_published_file_that_does_not_match_its_marker_is_refused(base, tmp_path):
     work = copy(base, tmp_path / "w")
-    con = duckdb.connect(str(db(work)))
+    con = connect(str(db(work)))
     con.execute("UPDATE raw_gl_journal SET debit_cents = debit_cents + 1 WHERE account_code <> '6100'")
     con.close()
     result = roi(work, "rollforward", "--month", MONTH)
@@ -285,7 +285,7 @@ def test_a_second_process_on_the_work_dir_finds_the_warehouse_busy(base, tmp_pat
 # ---- the swap sequence -------------------------------------------------------------------------
 
 def tiny(path: Path, rows: list[tuple], build_facts: str = "x") -> None:
-    con = duckdb.connect(str(path))
+    con = connect(str(path))
     con.execute("CREATE TABLE t(a INTEGER, b DOUBLE, d DATE)")
     con.executemany("INSERT INTO t VALUES (?, ?, ?)", rows)
     con.execute("CREATE TABLE prov_build(note VARCHAR)")

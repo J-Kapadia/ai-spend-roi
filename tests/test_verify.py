@@ -4,11 +4,11 @@ import json
 import shutil
 from pathlib import Path
 
-import duckdb
 import numpy as np
 import pytest
 from click.testing import CliRunner
 
+from conftest import connect
 from roi import estimator, verify_books
 from roi.cli import main
 
@@ -36,7 +36,7 @@ def copy(built, tmp_path):
 
 
 def edit(work, *statements):
-    con = duckdb.connect(str(work / "warehouse" / "roi.duckdb"))
+    con = connect(str(work / "warehouse" / "roi.duckdb"))
     try:
         for sql in statements:
             con.execute(sql)
@@ -79,7 +79,7 @@ def test_scenario_2_with_the_curve_allocation_and_agenda_built(tmp_path):
     checked = result.output.split("checked:")[1].splitlines()[0]
     assert "fit_curve" in checked and "alloc_result" in checked and "agenda_item" in checked
     assert "written empty" not in result.output
-    rows = duckdb.connect(str(work / "warehouse" / "roi.duckdb"), read_only=True).execute(
+    rows = connect(str(work / "warehouse" / "roi.duckdb"), read_only=True).execute(
         "SELECT team_id FROM agenda_item ORDER BY team_id").fetchall()
     assert [t for (t,) in rows] == ["legal_operations", "platform_engineering"]
 
@@ -139,7 +139,7 @@ def test_a_planted_effect_outside_its_interval_exits_1_naming_the_team_and_both_
 def test_the_planted_effect_is_the_mean_over_the_cells_of_the_team_effect(built):
     # the fixture's planted effects, worked by hand for one team from its cells' months and the truth file
     truth = json.loads((built / "truth" / "truth.json").read_text())["teams"]["finance_operations"]
-    con = duckdb.connect(str(built / "warehouse" / "roi.duckdb"), read_only=True)
+    con = connect(str(built / "warehouse" / "roi.duckdb"), read_only=True)
     months = [m for (m,) in con.execute(
         "SELECT strftime(t, '%Y-%m') FROM est_att_gt WHERE team_id = 'finance_operations' ORDER BY t").fetchall()]
     con.close()

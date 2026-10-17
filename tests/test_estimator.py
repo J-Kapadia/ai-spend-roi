@@ -7,12 +7,12 @@ import math
 from datetime import date
 from pathlib import Path
 
-import duckdb
 import numpy as np
 import pytest
 from click.testing import CliRunner
 
 from reference import cs_reference as ref
+from conftest import connect
 from roi import estimator
 from roi.cli import main
 from roi.steps import BuildContext
@@ -282,7 +282,7 @@ def test_baseline_uses_pre_months_and_falls_back_to_all():
 
 def make_warehouse(path, name):
     y, rollout, outcome = load(name)
-    con = duckdb.connect(str(path))
+    con = connect(str(path))
     con.execute(
         "CREATE TABLE fct_team_month(team_id VARCHAR, month DATE, outcome DOUBLE, y_log DOUBLE,"
         " spend_per_head_cents BIGINT, headcount INTEGER, rollout_month DATE)"
@@ -302,7 +302,7 @@ def test_step_writes_the_result_tables_with_no_figures_for_unmeasured_teams(tmp_
     work.warehouse.mkdir()
     make_warehouse(work.warehouse_next_db, "panel_pretrend.csv")
     estimate_step.run(BuildContext(work=work, db=work.warehouse_next_db, through="2025-10"))
-    con = duckdb.connect(str(work.warehouse_next_db), read_only=True)
+    con = connect(str(work.warehouse_next_db), read_only=True)
     eff = {r[0]: r for r in con.execute(
         "SELECT team_id, status, reason, effect, ci_lo, ci_hi, n_pre, n_post, df, baseline_basis, estimator_version,"
         " through_month FROM est_team_effect").fetchall()}

@@ -5,10 +5,10 @@ import hashlib
 import shutil
 from pathlib import Path
 
-import duckdb
 import pytest
 from click.testing import CliRunner
 
+from conftest import connect
 from roi import memo, prov
 from roi.cli import main
 from roi.workdir import RoiError, WorkDir
@@ -39,7 +39,7 @@ def copy(built, tmp_path):
 
 
 def edit(work, *statements):
-    con = duckdb.connect(str(work / "warehouse" / "roi.duckdb"))
+    con = connect(str(work / "warehouse" / "roi.duckdb"))
     try:
         for sql in statements:
             con.execute(sql)
@@ -83,7 +83,7 @@ def test_the_check_reports_sections_and_lists_the_static_numbers(built):
 
 
 def test_a_measured_teams_figures_are_the_warehouse_figures(built):
-    con = duckdb.connect(str(built / "warehouse" / "roi.duckdb"), read_only=True)
+    con = connect(str(built / "warehouse" / "roi.duckdb"), read_only=True)
     effect, lo, hi = con.execute(
         "SELECT effect, ci_lo, ci_hi FROM est_team_effect WHERE team_id = 'support' AND through_month = ?", [THROUGH]
     ).fetchone()
@@ -101,7 +101,7 @@ def test_unmeasured_and_control_teams_get_a_reason_and_no_figure(built):
     html = (built / "site" / "index.html").read_text(encoding="utf-8")
     assert "<code>no_pre_period</code>" in html and "<code>too_recent</code>" in html
     assert "control. It has had no AI tools" in html
-    con = duckdb.connect(str(built / "warehouse" / "roi.duckdb"), read_only=True)
+    con = connect(str(built / "warehouse" / "roi.duckdb"), read_only=True)
     _, collected = memo.collect(WorkDir(built), THROUGH, con)
     for team in ("platform_engineering", "legal_operations", "people_operations"):
         names = {r.name.split(":")[0] for r in collected.records.values() if r.name.endswith(f":{team}")}

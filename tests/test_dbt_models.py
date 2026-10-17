@@ -12,10 +12,10 @@ import shutil
 from datetime import date
 from pathlib import Path
 
-import duckdb
 import pytest
 from click.testing import CliRunner
 
+from conftest import connect
 from roi.cli import main
 from roi.steps import BuildContext, dbt, load
 from roi.workdir import RoiError, WorkDir
@@ -86,7 +86,7 @@ def build_models(work: Path, through: str = "2025-03") -> Path:
 
 
 def rows(db: Path, sql: str):
-    con = duckdb.connect(str(db), read_only=True)
+    con = connect(str(db), read_only=True)
     try:
         return con.execute(sql).fetchall()
     finally:
@@ -158,7 +158,7 @@ def test_marts_are_tables_and_the_settings_are_recorded(db):
 def test_verify_books_group_a_passes_on_these_books(db, tmp_path):
     from roi import verify_books
     shutil.copy(db, tmp_path / "x.duckdb")
-    con = duckdb.connect(str(tmp_path / "x.duckdb"), read_only=True)
+    con = connect(str(tmp_path / "x.duckdb"), read_only=True)
     try:
         report = verify_books.check_gl_tie(con, "2025-03")
     finally:
@@ -200,7 +200,7 @@ def test_every_singular_test_has_a_mutation():
 def test_sign_convention_also_checks_the_log_outcome(tmp_path, db):
     shutil.copy(db, tmp_path / "w.duckdb")
     sql = singular_sql("assert_sign_convention")
-    con = duckdb.connect(str(tmp_path / "w.duckdb"))
+    con = connect(str(tmp_path / "w.duckdb"))
     try:
         assert con.execute(sql).fetchall() == []
         con.execute("UPDATE fct_team_month SET y_log = -y_log WHERE team_id = 'b'")
@@ -218,7 +218,7 @@ def singular_sql(name: str) -> str:
 def test_singular_test_passes_clean_and_fails_corrupted(name, db, tmp_path):
     shutil.copy(db, tmp_path / "w.duckdb")
     sql = singular_sql(name)
-    con = duckdb.connect(str(tmp_path / "w.duckdb"))
+    con = connect(str(tmp_path / "w.duckdb"))
     try:
         assert con.execute(sql).fetchall() == [], "the test fails on clean books"
         con.execute(MUTATIONS[name])

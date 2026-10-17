@@ -11,10 +11,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-import duckdb
 import pytest
 from click.testing import CliRunner
 
+from conftest import connect
 from roi import rollforward
 from roi.cli import main
 
@@ -60,7 +60,7 @@ def file_digest(path: Path) -> str:
 def fingerprint(path: Path) -> str:
     """Digest of every table's rows except the build facts, which carry a clock and a random id.
     A DuckDB file is not byte-reproducible, so two warehouses are compared by content."""
-    con = duckdb.connect(str(path), read_only=True)
+    con = connect(str(path), read_only=True)
     try:
         h = hashlib.sha256()
         tables = [t for (t,) in con.execute(
@@ -76,7 +76,7 @@ def fingerprint(path: Path) -> str:
 
 
 def table_names(path: Path) -> set[str]:
-    con = duckdb.connect(str(path), read_only=True)
+    con = connect(str(path), read_only=True)
     try:
         return {t for (t,) in con.execute("SELECT table_name FROM information_schema.tables").fetchall()}
     finally:
