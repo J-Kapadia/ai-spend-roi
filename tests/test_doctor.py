@@ -171,12 +171,13 @@ def test_tree_runs_every_check_and_skips_on_request(copy):
     assert all(c.passed for c in checks)
 
 
-def test_tree_without_a_warehouse_fails_one_check_and_skips_those_that_need_it(tmp_path):
+def test_tree_without_books_or_a_warehouse_fails_both_checks_and_skips_those_that_need_the_warehouse(tmp_path):
     checks = {c.id: c for c in doctor.tree(WorkDir(tmp_path), REPO, skip=frozenset({"truth_boundary"}))}
-    assert checks["warehouse"].status == doctor.FAIL
+    assert checks["books"].status == checks["warehouse"].status == doctor.FAIL
+    assert checks["books"].detail.startswith("no books at")
     assert checks["dbt"].detail == checks["tie"].detail == "no warehouse"
     result = roi(tmp_path, "doctor", "--tree")
-    assert result.exit_code == 1 and "check(s) failed: warehouse" in result.output
+    assert result.exit_code == 1 and "check(s) failed: books, warehouse" in result.output
 
 
 @pytest.mark.slow

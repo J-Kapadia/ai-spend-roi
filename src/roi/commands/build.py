@@ -8,7 +8,7 @@ from pathlib import Path
 import click
 
 from roi import rollforward, steps
-from roi.gen import books, config, panel, toy
+from roi.gen import books, config, manifest, panel, toy
 from roi.steps import load
 from roi.workdir import RoiError, WorkDir
 
@@ -74,6 +74,7 @@ def command(
         gl_account = cfg.gl_account
 
     built = _through(work)
+    manifest.check_books(work.data)
     through = built if through_opt is None else through_opt
     rollforward.check_month(through)
     replay = _replay_months(work, built, through)

@@ -170,5 +170,6 @@ def write(cfg: GenConfig, panel: Panel, work: WorkDir) -> None:
                [[tp.spec.team_id, tp.spec.name, tp.spec.metric_id, tp.spec.unit_label, tp.spec.direction,
                  tp.spec.kind] for tp in panel.teams])
     write_incoming(cfg, panel, work)
+    manifest.write_books(work.data)
     (work.truth / "truth.json").write_text(
         json.dumps(_truth(cfg, panel), indent=2, sort_keys=True) + "\n", encoding="utf-8")

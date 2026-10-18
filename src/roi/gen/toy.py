@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
+from roi.gen import manifest
 from roi.workdir import WorkDir
 
 TOY_SEED = 1
@@ -102,6 +103,7 @@ def generate(work: WorkDir) -> None:
     _write_csv(work.books / "raw_output.csv", ["team_id", "month", "metric_id", "value"], output_rows)
     _write_csv(work.books / "dim_team.csv",
                ["team_id", "name", "metric_id", "unit_label", "direction", "kind"], team_rows)
+    manifest.write_books(work.data)
     (work.truth / "truth.json").write_text(
         json.dumps({"seed": TOY_SEED, "generator_version": "toy-0", "teams": truth}, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
