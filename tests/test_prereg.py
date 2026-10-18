@@ -9,6 +9,8 @@ import pytest
 import yaml
 
 from roi import estimator, prereg
+from roi.gen import books, config, manifest, panel
+from roi.workdir import WorkDir
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests" / "fixtures"
@@ -265,6 +267,130 @@ def test_the_doctor_accepts_a_registration_this_module_wrote(paths):
     assert doctor.prereg(paths.gen.parent.parent).status != doctor.FAIL
 
 
+# ---- the manifests ---------------------------------------------------------------------------------
+
+def generate(gen, work):
+    """What `roi gen` writes for this config into `work`."""
+    cfg = config.load(gen)
+    books.write(cfg, panel.simulate(cfg), WorkDir(work))
+    return WorkDir(work).data
+
+
+def manifest_files(data):
+    return {n: (data / n).read_text(encoding="utf-8") for n in (manifest.BOOKS_NAME, manifest.INCOMING_NAME)}
+
+
+@pytest.fixture
+def registered(paths, tmp_path_factory):
+    """The fixture repository with `data/MANIFEST*.sha256` as generated from its registered config."""
+    root = paths.gen.parent.parent
+    for name, text in manifest_files(generate(paths.gen, tmp_path_factory.mktemp("shipped"))).items():
+        paths.data.mkdir(exist_ok=True)
+        (paths.data / name).write_text(text, encoding="utf-8")
+    return paths
+
+
+def test_a_reregistration_rewrites_both_manifests_to_the_books_of_the_new_seed(registered, tmp_path):
+    before = manifest_files(registered.data)
+    prereg.reregister(registered, 4242, "support missed", estimator=EST, day=DAY)
+    after = manifest_files(registered.data)
+    assert all(after[n] != before[n] for n in before)
+    fresh = manifest_files(generate(registered.gen, tmp_path / "fresh"))
+    assert after == fresh
+    assert manifest.parse(after[manifest.BOOKS_NAME]) and manifest.parse(after[manifest.INCOMING_NAME])
+    assert sorted(p.name for p in registered.data.iterdir()) == sorted(before)  # no stray files
+
+
+def test_a_refused_reregistration_leaves_the_manifests_alone(registered):
+    spend(registered, 3)
+    snapshot = manifest_files(registered.data)
+    with pytest.raises(prereg.Refused, match="budget is spent"):
+        prereg.reregister(registered, 999, "a fourth miss", estimator=EST, day=DAY)
+    assert manifest_files(registered.data) == snapshot
+
+
+# ---- a change to the data-generating keys ----------------------------------------------------------
+
+def test_every_entry_logs_the_hash_of_the_data_generating_keys(registered):
+    prereg.reregister(registered, 7, "x", estimator=EST, day=DAY)
+    dgp = prereg.dgp_hash(registered.gen)
+    assert [e.dgp for e in prereg.read_log(registered.log)] == [dgp, dgp]
+
+
+def test_the_dgp_hash_ignores_the_seed_and_sees_the_keys(registered):
+    before = prereg.dgp_hash(registered.gen)
+    edit_gen(registered, lambda raw: raw.update(seed=3))
+    assert prereg.dgp_hash(registered.gen) == before
+    edit_gen(registered, lambda raw: raw["dgp"].update(ramp_months=4))
+    assert prereg.dgp_hash(registered.gen) != before
+
+
+def test_a_dgp_change_logs_old_and_new_key_hashes_keeps_the_seed_and_spends_budget(registered, tmp_path):
+    old_dgp = prereg.dgp_hash(registered.gen)
+    edit_gen(registered, lambda raw: raw["dgp"].update(ramp_months=4))
+    assert any("registered input has changed" in p for p in prereg.problems(registered))
+    before = manifest_files(registered.data)
+    e = prereg.dgp_change(registered, "ramp 3 to 4 months", estimator=EST, day="2026-11-02")
+    assert (e.seed, e.old_seed) == (20261013, 20261013)
+    assert (e.old_dgp, e.dgp) == (old_dgp, prereg.dgp_hash(registered.gen)) and e.old_dgp != e.dgp
+    assert prereg.problems(registered) == []
+    assert yaml.safe_load(registered.gen.read_text(encoding="utf-8"))["seed"] == 20261013
+    log = prereg.read_log(registered.log)
+    assert len(log) == 2 and log[-1] == e and prereg.count_for(log, EST) == 2
+    assert f"old_dgp={old_dgp}" in registered.log.read_text(encoding="utf-8")
+    after = manifest_files(registered.data)
+    assert after != before and after == manifest_files(generate(registered.gen, tmp_path / "fresh"))
+
+
+def test_a_dgp_change_is_followed_by_a_dgp_change_or_a_new_seed(registered):
+    edit_gen(registered, lambda raw: team(raw, "support").update(noise_sd=0.05))
+    prereg.dgp_change(registered, "noise", estimator=EST, day=DAY)
+    edit_gen(registered, lambda raw: raw["dgp"].update(ramp_months=2))
+    second = prereg.dgp_change(registered, "ramp", estimator=EST, day=DAY)
+    assert second.old_dgp == prereg.read_log(registered.log)[1].dgp
+    prereg.reregister(registered, 8, "miss", estimator=EST, day=DAY)
+    assert prereg.problems(registered) == [] and len(prereg.read_log(registered.log)) == 4
+
+
+def test_a_dgp_change_with_no_change_is_refused(registered):
+    snapshot = {p: p.read_bytes() for p in (registered.gen, registered.digest, registered.log)}
+    manifests = manifest_files(registered.data)
+    with pytest.raises(prereg.Refused, match="nothing changed"):
+        prereg.dgp_change(registered, "no edit", estimator=EST, day=DAY)
+    assert {p: p.read_bytes() for p in snapshot} == snapshot and manifest_files(registered.data) == manifests
+
+
+def test_a_dgp_change_needs_a_reason_a_kept_seed_and_a_change_in_the_keys(registered):
+    edit_gen(registered, lambda raw: raw["dgp"].update(ramp_months=4))
+    with pytest.raises(prereg.Refused, match="reason"):
+        prereg.dgp_change(registered, " ", estimator=EST, day=DAY)
+    edit_gen(registered, lambda raw: raw.update(seed=9))
+    with pytest.raises(prereg.Refused, match="not intact"):
+        prereg.dgp_change(registered, "seed edited too", estimator=EST, day=DAY)
+    edit_gen(registered, lambda raw: raw.update(seed=20261013))
+    edit_gen(registered, lambda raw: raw["dgp"].update(ramp_months=3))
+    edit_calibration(registered, lambda raw: raw["rows"][0].update(effect_low=0.04))
+    with pytest.raises(prereg.Refused, match="no data-generating key changed"):
+        prereg.dgp_change(registered, "only a range", estimator=EST, day=DAY)
+
+
+def test_both_forms_are_refused_once_the_budget_is_spent(registered):
+    spend(registered, 3)
+    edit_gen(registered, lambda raw: raw["dgp"].update(ramp_months=4))
+    snapshot = {p: p.read_bytes() for p in (registered.gen, registered.digest, registered.log)}
+    manifests = manifest_files(registered.data)
+    with pytest.raises(prereg.Refused, match="budget is spent"):
+        prereg.dgp_change(registered, "a fourth draw", estimator=EST, day=DAY)
+    assert {p: p.read_bytes() for p in snapshot} == snapshot and manifest_files(registered.data) == manifests
+
+
+def test_an_entry_with_key_hashes_survives_a_round_trip():
+    e = prereg.Entry(DAY, EST, 7, "a" * 64, 7, "ramp", "b" * 64, "c" * 64)
+    assert prereg.parse_entry(prereg.format_entry(e)) == e
+    with pytest.raises(ValueError):
+        prereg.parse_entry(prereg.format_entry(e).replace("b" * 64, "b" * 5))
+
+
 # ---- the script ------------------------------------------------------------------------------------
 
 def script(root, *args):
@@ -296,6 +422,32 @@ def test_the_script_reregisters_creates_no_tag_and_enforces_the_budget(paths, re
     r = script(repo, "600", "a fourth miss")
     assert r.returncode == 3 and "budget is spent" in r.stderr
     assert len(prereg.read_log(paths.log)) == 4
+
+
+def test_the_script_takes_a_dgp_change_as_its_second_form(registered, repo):
+    assert script(repo, "--dgp-change").returncode == 2
+    assert script(repo, "--dgp-change", "  ").returncode == 2
+    r = script(repo, "--dgp-change", "no edit yet")
+    assert r.returncode == 3 and "nothing changed" in r.stderr
+    edit_gen(registered, lambda raw: raw["dgp"].update(ramp_months=4))
+    r = script(repo, "--dgp-change", "ramp 3 to 4")
+    assert r.returncode == 0, r.stderr
+    assert "no tag was created" in r.stdout
+    assert [e.seed for e in prereg.read_log(registered.log)] == [20261013, 20261013]
+    assert prereg.problems(registered) == []
+    r = script(repo, "6", "miss")
+    assert r.returncode == 0, r.stderr
+    assert manifest_files(registered.data) == manifest_files(generate(registered.gen, repo / "fresh"))
+
+
+def test_the_cli_wants_exactly_one_form(registered):
+    from click.testing import CliRunner
+
+    root = str(registered.gen.parent.parent)
+    run = lambda *a: CliRunner().invoke(prereg.main, ["--root", root, "reregister", *a])  # noqa: E731
+    assert run("--why", "x").exit_code == 2
+    assert run("--new-seed", "5", "--dgp-change", "--why", "x").exit_code == 2
+    assert len(prereg.read_log(registered.log)) == 1
 
 
 def test_the_script_refuses_before_a_first_registration(repo):
