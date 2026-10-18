@@ -18,7 +18,7 @@ import duckdb
 import jinja2
 
 from roi.db import connect as db_connect
-from roi import prov, verify_books
+from roi import calibration, prov, verify_books
 from roi import roi as roi_calc
 from roi.prov import Record
 from roi.steps import roi as roi_step
@@ -102,6 +102,29 @@ def _has(con: duckdb.DuckDBPyConnection, table: str) -> bool:
     return bool(con.execute(
         "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'main' AND table_name = ?", [table]
     ).fetchone()[0])
+
+
+def calibration_path(roi_config: Path) -> Path:
+    """The calibration table that goes with a roi config: `roi.yaml` -> `calibration.yaml`, `roi_x.yaml` -> `calibration_x.yaml`."""
+    stem = roi_config.stem
+    suffix = stem[3:] if stem == "roi" or stem.startswith("roi_") else ""
+    return roi_config.with_name("calibration" + suffix + roi_config.suffix)
+
+
+def calibration_rows(work: WorkDir, teams: list[dict]) -> list[dict]:
+    """The calibration rows of the teams in the memo, by team name; none when the table is missing or empty."""
+    path = calibration_path(roi_step.config_path(work))
+    if not path.exists():
+        return []
+    try:
+        rows = calibration.load(path)
+    except ValueError as e:
+        raise RoiError(2, str(e)) from e
+    names = {t["team"]: t["name"] for t in teams}
+    return sorted(
+        ({"name": names[r.team_id], "source": r.source_ref, "extrapolated": r.extrapolated} for r in rows if r.team_id in names),
+        key=lambda r: r["name"],
+    )
 
 
 def open_warehouse(work: WorkDir) -> duckdb.DuckDBPyConnection:
@@ -286,7 +309,7 @@ def collect(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> tuple[
     context = {
         "month": month, "headline": headline, "teams": teams, "company_share": company_share,
         "sensitivity": sensitivity, "allocation": allocation, "agenda": agenda, "assumptions": assumptions,
-        "unmeasured": [t for t in teams if t["status"] != "measured"],
+        "unmeasured": [t for t in teams if t["status"] != "measured"], "calibration": calibration_rows(work, teams),
     }
     return context, c
 

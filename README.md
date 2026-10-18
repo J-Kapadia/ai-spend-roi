@@ -16,7 +16,7 @@ The memo page answers them in that order, and every figure on it is a link to a 
 
 ## What planted effects do and do not show
 
-The data is synthetic. The generator plants a known effect of AI in each team, chosen within ranges taken from published studies, and writes the answer to a file that the method never reads. Only the verification command opens it.
+The data is synthetic. The generator plants a known effect of AI in each team, chosen within ranges taken from published studies, and writes the answer to a file that the method never reads. Only the verification command opens it. Some teams' planted effects come from studies of different work than the team's own, and the memo names them.
 
 What recovering planted effects shows:
 

@@ -121,6 +121,28 @@ a { color: inherit; text-decoration: underline dotted; }
 </tbody>
 </table>
 {% endif %}
+{% if calibration %}
+<h2 id="calibration">How the planted effects were calibrated</h2>
+<p>The planted effects were calibrated to published studies. A study counts as measuring the same kind of work only when it measured the team's own task; otherwise the team's effect is carried over from the nearest work that was measured.</p>
+{% set different = calibration | selectattr('extrapolated') | list %}
+{% set same = calibration | rejectattr('extrapolated') | list %}
+{% if different %}
+<p>These teams' planted effects come from studies that measured different work:</p>
+<ul id="calibration-different">
+{% for r in different %}
+<li>{{ r.name }}: <cite class="lit">{{ r.source }}</cite>. The study measured different work.</li>
+{% endfor %}
+</ul>
+{% endif %}
+{% if same %}
+<p>These teams' planted effects come from studies that measured the same kind of work:</p>
+<ul id="calibration-same">
+{% for r in same %}
+<li>{{ r.name }}: <cite class="lit">{{ r.source }}</cite>.</li>
+{% endfor %}
+</ul>
+{% endif %}
+{% endif %}
 <p>Build facts for any number (code version, producer, checks) are not on these pages; <code>roi explain</code> prints them with the stored record.</p>
 </body>
 </html>

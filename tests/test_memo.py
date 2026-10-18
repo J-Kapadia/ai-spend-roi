@@ -269,6 +269,52 @@ def test_numbers_in_the_head_are_not_in_the_body():
     assert s.untagged == []
 
 
+# ---- the calibration paragraph ---------------------------------------------------------------------------
+
+def write_calibration(work, rows):
+    import yaml
+
+    (work / "config" / "calibration.yaml").write_text(yaml.safe_dump({"rows": rows}), encoding="utf-8")
+
+
+def calibration_row(team, source, extrapolated):
+    return {"team_id": team, "effect_low": 0.05, "effect_high": 0.2, "source_ref": source,
+            "figure": "a figure that stays out of the memo", "verified_on": "2000-01-01", "extrapolated": extrapolated}
+
+
+def test_the_memo_names_the_teams_calibrated_from_studies_of_different_work(copy):
+    write_calibration(copy, [
+        calibration_row("sales_development", "Fixture C, 2000, Journal of Invented Results", True),
+        calibration_row("support", "Fixture B, 2001, Journal of Invented Results", False),
+    ])
+    assert roi(copy, "memo", "--month", THROUGH).exit_code == 0
+    html = (copy / "site" / "index.html").read_text(encoding="utf-8")
+    different = html[html.index('id="calibration-different"'):html.index("</ul>", html.index('id="calibration-different"'))]
+    assert "Sales Development" in different and "Fixture C, 2000, Journal of Invented Results" in different
+    assert "measured different work" in different
+    assert "Support" not in different and "Fixture B" not in different
+    same = html[html.index('id="calibration-same"'):html.index("</ul>", html.index('id="calibration-same"'))]
+    assert "Support" in same and "Fixture B, 2001, Journal of Invented Results" in same
+    assert "different work" not in same
+    assert "a figure that stays out of the memo" not in html
+    result = roi(copy, "memo", "--month", THROUGH, "--check")
+    assert result.exit_code == 0, result.output
+
+
+def test_without_a_calibration_table_the_paragraph_is_absent(built, copy):
+    write_calibration(copy, [])
+    assert roi(copy, "memo", "--month", THROUGH).exit_code == 0
+    for work in (built, copy):
+        html = (work / "site" / "index.html").read_text(encoding="utf-8")
+        assert "calibrated" not in html and 'id="calibration' not in html
+
+
+def test_a_calibration_table_that_does_not_load_stops_the_memo(copy):
+    write_calibration(copy, [{**calibration_row("support", "Fixture B", False), "verified_on": None}])
+    result = roi(copy, "memo", "--month", THROUGH)
+    assert result.exit_code == 2 and "verified_on" in result.output
+
+
 # ---- the toy company --------------------------------------------------------------------------------------
 
 def test_the_toy_company_memo_resolves_without_a_value_per_unit(tmp_path):
