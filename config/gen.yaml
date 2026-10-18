@@ -1,7 +1,7 @@
 # Generator config for Beta Co, the synthetic company.
 #
-# `roi gen` reads this file. The `teams` table below is filled in by the author; while
-# it is empty `roi gen` exits 4 and asks for it to be filled. Each row needs these fields:
+# `roi gen` reads this file. The `teams` table below is entered by the author; if it is empty
+# `roi gen` exits 4 and asks for it. Each row needs these fields:
 #
 #   team_id, name, metric_id, unit_label
 #   direction                      1 if higher output is better, -1 if lower is better
@@ -30,11 +30,54 @@ dgp:
   input_cost_share: 0.7         # share of cost that is input tokens, to derive token counts
   gl_account: "6100"            # the AI-usage ledger account
   noise_accounts: ["6200", "6300"]
-  target_ai_share_of_payroll: null   # filled in by the author; checked against the table by its test
+  target_ai_share_of_payroll: 0.024745   # sum(headcount x target spend) / sum(headcount x payroll), at full rollout,
+                                         # team spend only (the unassigned bucket is on top); 119,550 / 4,831,250
 
 # Fictional providers and models, with a price per million tokens in cents.
 prices:
   - {provider: provider_a, model: model_a1, input_cents_per_mtok: 300.0, output_cents_per_mtok: 1500.0}
   - {provider: provider_a, model: model_a2, input_cents_per_mtok: 100.0, output_cents_per_mtok: 500.0}
 
-teams: []
+# Beta Co, 400 people in eight teams. Payroll is the loaded monthly cost per head: the BLS OEWS
+# May 2025 national median annual wage of the matching occupation times the BLS ECEC June 2026
+# ratio of total compensation to wages, divided by 12. Target spend is monthly AI spend per head
+# after the ramp, anchored on public list prices (engineering: 600 USD, a 200 USD per month
+# agentic coding plan seat plus about 400 USD of metered use). effect_at_target is the published figure named
+# in calibration_ref, as an improvement in output (0.152 = 15.2% more); for days to close it is
+# the improvement in the direction-normalised outcome (days fall to 1 / 1.335 of baseline).
+# noise_sd follows the noise rule: effect / standard error = 3 for the five teams measured through
+# 2026-03 and for legal_operations through 2026-04; the control and platform_engineering carry
+# the median of the five.
+teams:
+  - {team_id: platform_engineering, name: Platform Engineering, metric_id: changes_shipped, unit_label: changes,
+     direction: 1, kind: additive, rollout_month: "2025-04", headcount: 44, monthly_payroll_per_head_usd: 16543,
+     baseline_output: 3.2, target_spend_per_head_usd: 600, effect_at_target: 0.13, noise_sd: 0.0347,
+     calibration_ref: "Cui, Demirer, Jaffe, Musolff, Peng and Salz 2026, Management Science (long-tenure developers)"}
+  - {team_id: support, name: Support, metric_id: tickets_resolved, unit_label: tickets,
+     direction: 1, kind: additive, rollout_month: "2025-07", headcount: 96, monthly_payroll_per_head_usd: 7526,
+     baseline_output: 290.0, target_spend_per_head_usd: 50, effect_at_target: 0.152, noise_sd: 0.0347,
+     calibration_ref: "Brynjolfsson, Li and Raymond 2025, Quarterly Journal of Economics"}
+  - {team_id: sales_development, name: Sales Development, metric_id: pipeline_created, unit_label: USD of pipeline,
+     direction: 1, kind: additive, rollout_month: "2025-08", headcount: 48, monthly_payroll_per_head_usd: 7746,
+     baseline_output: 315000.0, target_spend_per_head_usd: 50, effect_at_target: 0.152, noise_sd: 0.0331,
+     calibration_ref: "Brynjolfsson, Li and Raymond 2025, Quarterly Journal of Economics (extrapolated to outbound sales)"}
+  - {team_id: product_engineering, name: Product Engineering, metric_id: changes_shipped, unit_label: changes,
+     direction: 1, kind: additive, rollout_month: "2025-09", headcount: 138, monthly_payroll_per_head_usd: 16543,
+     baseline_output: 3.7, target_spend_per_head_usd: 600, effect_at_target: 0.2608, noise_sd: 0.0596,
+     calibration_ref: "Cui, Demirer, Jaffe, Musolff, Peng and Salz 2026, Management Science"}
+  - {team_id: marketing, name: Marketing, metric_id: assets_shipped, unit_label: assets,
+     direction: 1, kind: additive, rollout_month: "2025-11", headcount: 40, monthly_payroll_per_head_usd: 9582,
+     baseline_output: 10.0, target_spend_per_head_usd: 50, effect_at_target: 0.122, noise_sd: 0.0126,
+     calibration_ref: "Dell'Acqua et al. 2023, Harvard Business School Working Paper 24-013 (tasks completed)"}
+  - {team_id: finance_operations, name: Finance Operations, metric_id: days_to_close, unit_label: days,
+     direction: -1, kind: team_level, rollout_month: "2025-12", headcount: 14, monthly_payroll_per_head_usd: 10180,
+     baseline_output: 6.4, target_spend_per_head_usd: 25, effect_at_target: 0.335, noise_sd: 0.0631,
+     calibration_ref: "Dell'Acqua et al. 2023, Harvard Business School Working Paper 24-013 (speed)"}
+  - {team_id: legal_operations, name: Legal Operations, metric_id: contracts_reviewed, unit_label: contracts,
+     direction: 1, kind: additive, rollout_month: "2026-02", headcount: 8, monthly_payroll_per_head_usd: 11183,
+     baseline_output: 40.0, target_spend_per_head_usd: 100, effect_at_target: 0.2866, noise_sd: 0.0411,
+     calibration_ref: "Choi, Monahan and Schwarcz 2024, Minnesota Law Review (mean time saving over four tasks)"}
+  - {team_id: people_operations, name: People Operations, metric_id: requisitions_filled, unit_label: requisitions,
+     direction: 1, kind: additive, rollout_month: null, headcount: 12, monthly_payroll_per_head_usd: 9238,
+     baseline_output: 0.8, target_spend_per_head_usd: 0, effect_at_target: 0.0, noise_sd: 0.0347,
+     calibration_ref: null}

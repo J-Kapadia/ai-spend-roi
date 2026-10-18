@@ -1,8 +1,9 @@
 """Load and check `config/calibration.yaml`: one row per team, the published range its planted effect must sit in.
 
-The file holds no figure until a person has read the paper. The schema is checked on
-every load; the per-row rules (a `verified_on` date, a numeric range, a source) apply to every
-row that exists, so an empty `rows` list is a valid file and a half-filled one is not.
+A figure enters the file once it has been verified against the paper's text and its quote is
+recorded in `figure`; the author spot-checks. The schema is checked on every load; the per-row
+rules (a `verified_on` date, a numeric range, a source) apply to every row that exists, so an
+empty `rows` list is a valid file and a half-filled one is not.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ class Row:
     effect_high: float
     source_ref: str  # authors, year, venue
     figure: str  # as printed in the paper
-    verified_on: str  # ISO date a person checked the figure against the paper
+    verified_on: str  # ISO date the figure was verified against the paper's text
     extrapolated: bool  # true when the study's task differs from the team's
 
 
@@ -55,7 +56,7 @@ def schema_problems(raw: dict) -> list[str]:
     problems = [f"unknown top-level key {k!r}" for k in raw if k not in TOP_KEYS]
     rows = raw.get("rows")
     if not isinstance(rows, list):
-        return problems + ["`rows` must be a list (empty until a person has checked the paper)"]
+        return problems + ["`rows` must be a list (empty until a figure has been verified against the paper)"]
     for i, row in enumerate(rows, 1):
         label = f"row {i}"
         if not isinstance(row, dict):
@@ -86,7 +87,7 @@ def row_problems(raw: dict) -> list[str]:
             if not isinstance(row[key], str) or not row[key].strip():
                 problems.append(f"{label}: {key} must be a non-empty string")
         if row["verified_on"] in (None, ""):
-            problems.append(f"{label}: no verified_on; a person has not checked the figure against the paper")
+            problems.append(f"{label}: no verified_on; the figure has not been verified against the paper")
         elif not _iso_date(row["verified_on"]):
             problems.append(f"{label}: verified_on must be an ISO date (YYYY-MM-DD)")
         if not isinstance(row["extrapolated"], bool):

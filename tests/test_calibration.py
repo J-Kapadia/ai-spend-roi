@@ -23,22 +23,19 @@ def fixture() -> dict:
     return copy.deepcopy(calibration.read(FIXTURE))
 
 
-# ---- the real file: schema always; rows and effects only once they exist ---------------------------
+# ---- the real file: the schema, the rows, and every planted effect inside its range ---------------------
 
 def test_the_real_calibration_file_matches_the_schema():
     raw = calibration.read(ROOT / "config" / "calibration.yaml")
     assert calibration.schema_problems(raw) == []
 
 
-def test_every_row_that_exists_in_the_real_file_is_verified_and_holds_the_planted_effect():
+def test_the_real_file_has_a_verified_row_for_every_planted_effect_inside_its_range():
     path = ROOT / "config" / "calibration.yaml"
     raw = calibration.read(path)
-    if not raw["rows"]:
-        pytest.skip("no figures yet: the author fills them in")
     assert calibration.row_problems(raw) == []
-    gen = ROOT / "config" / "gen.yaml"
-    if yaml.safe_load(gen.read_text(encoding="utf-8")).get("teams"):
-        assert calibration.effect_problems(raw, planted(gen)) == []
+    assert len(calibration.load(path)) == 7  # every team but the control
+    assert calibration.effect_problems(raw, planted(ROOT / "config" / "gen.yaml")) == []
 
 
 # ---- the fixture passes ----------------------------------------------------------------------------

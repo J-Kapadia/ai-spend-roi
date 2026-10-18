@@ -186,11 +186,39 @@ def test_noise_of_unmeasured_teams_is_the_median_of_the_measured(cfg):
     assert sds["platform_engineering"] == sds["people_operations"] == median
 
 
-def test_real_config_with_the_empty_table_exits_4():
-    assert yaml.safe_load(REAL_CONFIG.read_text())["teams"] == []
-    result = CliRunner().invoke(main, ["gen", "--config", str(REAL_CONFIG)])
+def test_the_shipped_config_holds_the_eight_team_table():
+    real = config.load(REAL_CONFIG)
+    assert [t.team_id for t in real.teams] == list(ROLLOUTS)
+    assert {t.team_id: t.rollout_month for t in real.teams} == ROLLOUTS
+    assert sum(t.headcount for t in real.teams) == 400
+    assert [t.team_id for t in real.teams if t.rollout_month is None] == ["people_operations"]
+    assert all(0 <= t.target_spend_per_head_usd for t in real.teams)
+    engineering = {t.team_id: t.target_spend_per_head_usd for t in real.teams}
+    assert engineering["platform_engineering"] == engineering["product_engineering"] == 600
+
+
+def test_the_shipped_share_of_payroll_matches_its_table():
+    raw = yaml.safe_load(REAL_CONFIG.read_text())
+    teams = raw["teams"]
+    spend = sum(t["headcount"] * t["target_spend_per_head_usd"] for t in teams)
+    payroll = sum(t["headcount"] * t["monthly_payroll_per_head_usd"] for t in teams)
+    assert raw["dgp"]["target_ai_share_of_payroll"] == pytest.approx(spend / payroll, abs=5e-7)
+
+
+def test_the_shipped_config_generates(tmp_path):
+    result = gen(tmp_path / "w", config_path=REAL_CONFIG)
+    assert result.exit_code == 0, result.output
+
+
+def test_a_config_with_the_empty_table_exits_4(tmp_path):
+    raw = yaml.safe_load(REAL_CONFIG.read_text())
+    raw["teams"] = []
+    path = tmp_path / "gen.yaml"
+    path.write_text(yaml.safe_dump(raw))
+    result = gen(tmp_path / "w", config_path=path)
     assert result.exit_code == 4
     assert "fill the team table in config/gen.yaml" in result.output
+    assert not (tmp_path / "w").exists()
 
 
 def test_an_incomplete_row_exits_4_asking_for_the_table(tmp_path):

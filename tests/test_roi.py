@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import yaml
 from click.testing import CliRunner
 
 from conftest import connect
@@ -19,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 GEN_FIXTURE = ROOT / "tests" / "fixtures" / "gen_fixture.yaml"
 ROI_FIXTURE = ROOT / "tests" / "fixtures" / "roi_fixture.yaml"
 SHIPPED = ROOT / "config" / "roi.yaml"
+GEN_SHIPPED = ROOT / "config" / "gen.yaml"
 THROUGH = "2026-03"
 
 
@@ -170,16 +172,36 @@ def test_no_spend_means_no_multiple():
 
 # ---- the config -------------------------------------------------------------------------------
 
-def test_the_shipped_config_has_the_structure_and_no_values():
+def test_the_shipped_config_has_the_structure_and_the_values():
     cfg = calc.load_config(SHIPPED)
     assert set(cfg.teams) == {
         "platform_engineering", "support", "sales_development", "product_engineering", "marketing",
         "finance_operations", "legal_operations", "people_operations",
     }
     assert {t for t, c in cfg.teams.items() if c.kind == calc.TEAM_LEVEL} == {"finance_operations"}
-    assert all(c.value is None for c in cfg.teams.values())
+    assert all(c.value is not None and 0 < c.value.low < c.value.base < c.value.high for c in cfg.teams.values())
     assert cfg.survive_share == 0.90
     assert cfg.multipliers == (0.5, 0.75, 1.0, 1.25, 1.5)
+
+
+def test_the_shipped_values_are_half_the_loaded_cost_of_a_unit():
+    cfg = calc.load_config(SHIPPED)
+    teams = {t["team_id"]: t for t in yaml.safe_load(GEN_SHIPPED.read_text())["teams"]}
+    for team_id, c in cfg.teams.items():
+        t = teams[team_id]
+        if c.kind == calc.TEAM_LEVEL:  # half of one calendar day of the team's loaded payroll
+            half_cost = t["headcount"] * t["monthly_payroll_per_head_usd"] * 12 / 365 / 2
+        else:
+            half_cost = t["monthly_payroll_per_head_usd"] / t["baseline_output"] / 2
+        assert c.value.base == pytest.approx(half_cost, rel=0.005), team_id
+        assert c.value.low == pytest.approx(c.value.base / 2) and c.value.high == pytest.approx(c.value.base * 2)
+
+
+def test_the_shipped_budget_is_a_share_of_the_headroom_of_the_measured_teams():
+    teams = {t["team_id"]: t for t in yaml.safe_load(GEN_SHIPPED.read_text())["teams"]}
+    measured = ("support", "sales_development", "product_engineering", "marketing", "finance_operations")
+    headroom = sum(teams[t]["headcount"] * 0.5 * teams[t]["target_spend_per_head_usd"] for t in measured)
+    assert alloc.load_config(SHIPPED).memo_budget_usd == round(0.4 * headroom, -3)
 
 
 def test_the_fixture_config_matches_the_shipped_structure():
@@ -236,8 +258,18 @@ def test_partly_entered_values_count_as_not_entered(tmp_path):
 
 # ---- the step's rules --------------------------------------------------------------------------
 
-def test_a_listed_measured_team_without_values_stops_the_build():
-    cfg = calc.load_config(SHIPPED)
+def without_values(tmp_path) -> Path:
+    """The shipped roi config with every value per unit emptied."""
+    raw = yaml.safe_load(SHIPPED.read_text())
+    for entry in raw["value_per_unit"].values():
+        entry.update(low=None, base=None, high=None)
+    path = tmp_path / "roi.yaml"
+    path.write_text(yaml.safe_dump(raw))
+    return path
+
+
+def test_a_listed_measured_team_without_values_stops_the_build(tmp_path):
+    cfg = calc.load_config(without_values(tmp_path))
     inputs = [team_input(team_id="support")]
     with pytest.raises(RoiError) as e:
         step.rows(THROUGH, inputs, cfg)
@@ -348,8 +380,11 @@ def test_the_roi_step_runs_between_the_estimator_and_provenance():
 
 
 def test_a_build_without_values_exits_4(tmp_path):
-    gen = tmp_path / "elsewhere.yaml"  # no config of the same name beside it: the shipped, empty one applies
+    beside = tmp_path / "beside"  # the roi config beside the generator config is the one that applies
+    beside.mkdir()
+    gen = beside / "gen.yaml"
     shutil.copy(GEN_FIXTURE, gen)
+    shutil.copy(without_values(tmp_path), beside / "roi.yaml")
     result = roi(tmp_path / "w", "build", "--config", str(gen))
     assert result.exit_code == 4, result.output
     assert "fill in the value per unit" in result.output

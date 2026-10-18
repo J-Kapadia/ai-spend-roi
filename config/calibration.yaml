@@ -1,16 +1,71 @@
 # Calibration table: the published range each team's planted effect must sit inside.
 #
-# No figure enters this file until a person has checked it against the paper; the
-# table stays empty until then. One row per team that has a planted effect (not the control):
+# A figure enters this file once it has been verified against the paper's text and its quote is
+# recorded in `figure`; the author spot-checks. One row per team that has a planted effect (not
+# the control):
 #
 #   team_id        the team's id in config/gen.yaml
 #   effect_low     low end of the published range, as a fraction (0.12 = 12%)
 #   effect_high    high end of the range, same unit
 #   source_ref     authors, year, venue
 #   figure         as printed in the paper
-#   verified_on    YYYY-MM-DD, the day a person checked the figure against the paper
+#   verified_on    YYYY-MM-DD, the day the figure was verified against the paper's text
 #   extrapolated   true when the study's task differs from the team's
 #
 # Every row must have a verified_on, and each team's effect_at_target in config/gen.yaml must
 # lie inside its row's range (tests/test_calibration.py).
-rows: []
+#
+# Ranges are 95% intervals (estimate +/- 1.96 standard errors, or the printed interval) turned
+# into an improvement in output: a coefficient is divided by the control or pre-treatment mean;
+# a time saving s becomes 1 / (1 - s) - 1 more output in the same time. The conversion is
+# arithmetic on printed figures, not a figure printed in the paper.
+rows:
+  - team_id: platform_engineering
+    effect_low: 0.0589     # 26.08% - 1.96 x 10.3%
+    effect_high: 0.4627    # 26.08% + 1.96 x 10.3%
+    source_ref: "Cui, Demirer, Jaffe, Musolff, Peng, Salz, 2026, Management Science, doi:10.1287/mnsc.2025.00535 (figures from the June 2025 author version)"
+    figure: "the number of weekly pull requests made by developers increases by 26.08% (SE: 10.3%); long-tenure developers experience smaller gains of 8% to 13%"
+    verified_on: "2026-10-14"
+    extrapolated: true     # infrastructure work by long-tenure engineers; planted 0.13, the long-tenure end
+  - team_id: support
+    effect_low: 0.1200     # (0.301 - 1.96 x 0.0329) / 1.97
+    effect_high: 0.1855    # (0.301 + 1.96 x 0.0329) / 1.97
+    source_ref: "Brynjolfsson, Li, Raymond, 2025, Quarterly Journal of Economics 140(2):889-942, doi:10.1093/qje/qjae044"
+    figure: "the deployment of AI increases RPH by 0.30 chats or 15.2% (Table II, column 3: 0.301, SE 0.0329; pre-treatment mean 1.97)"
+    verified_on: "2026-10-14"
+    extrapolated: false    # chat-based customer support agents, output is resolutions
+  - team_id: sales_development
+    effect_low: 0.1200
+    effect_high: 0.1855
+    source_ref: "Brynjolfsson, Li, Raymond, 2025, Quarterly Journal of Economics 140(2):889-942, doi:10.1093/qje/qjae044"
+    figure: "the deployment of AI increases RPH by 0.30 chats or 15.2% (Table II, column 3: 0.301, SE 0.0329; pre-treatment mean 1.97)"
+    verified_on: "2026-10-14"
+    extrapolated: true     # no published experiment measures sales development output; nearest written customer work
+  - team_id: product_engineering
+    effect_low: 0.0589
+    effect_high: 0.4627
+    source_ref: "Cui, Demirer, Jaffe, Musolff, Peng, Salz, 2026, Management Science, doi:10.1287/mnsc.2025.00535 (figures from the June 2025 author version)"
+    figure: "the number of weekly pull requests made by developers increases by 26.08% (SE: 10.3%)"
+    verified_on: "2026-10-14"
+    extrapolated: false    # developers in firms, output is completed pull requests
+  - team_id: marketing
+    effect_low: 0.0593     # (0.090 - 1.96 x 0.021) / 0.824, GPT-only arm
+    effect_high: 0.1823    # (0.111 + 1.96 x 0.020) / 0.824, GPT-plus-overview arm
+    source_ref: "Dell'Acqua, McFowland, Mollick, Lifshitz-Assaf, Kellogg, Rajendran, Krayer, Candelon, Lakhani, 2023, Harvard Business School Working Paper 24-013"
+    figure: "they completed 12.2% more tasks on average (Table 2: 0.111, SE 0.020 and 0.090, SE 0.021; control mean 0.824)"
+    verified_on: "2026-10-14"
+    extrapolated: true     # consultants on creative product and writing tasks in a timed experiment
+  - team_id: finance_operations
+    effect_low: 0.2078     # 1 / (1 - (1129.143 - 1.96 x 135.181) / 5023) - 1
+    effect_high: 0.5038    # 1 / (1 - (1388.415 + 1.96 x 150.204) / 5023) - 1
+    source_ref: "Dell'Acqua, McFowland, Mollick, Lifshitz-Assaf, Kellogg, Rajendran, Krayer, Candelon, Lakhani, 2023, Harvard Business School Working Paper 24-013"
+    figure: "completed tasks 25.1% more quickly (Table 3: -1129.143 s, SE 135.181 and -1388.415 s, SE 150.204; control mean 5023 s)"
+    verified_on: "2026-10-14"
+    extrapolated: true     # analytical tasks, not the monthly close; planted 1 / (1 - 0.251) - 1 = 0.335
+  - team_id: legal_operations
+    effect_low: 0.1855     # 1 / (1 - 10.91 / 69.72) - 1
+    effect_high: 0.9361    # 1 / (1 - 33.71 / 69.72) - 1
+    source_ref: "Choi, Monahan, Schwarcz, 2024, Lawyering in the Age of Artificial Intelligence, 109 Minnesota Law Review 147"
+    figure: "large declines in the amount of time taken to complete tasks (-24.1%, -32.1%, -21.1%, and -11.8%); contract drafting -22.40 minutes (95% CI -33.71, -10.91) on 69.72 (Table 2)"
+    verified_on: "2026-10-14"
+    extrapolated: true     # law students drafting, not reviewing; planted 1 / (1 - 0.22275) - 1 = 0.2866, the four-task mean
