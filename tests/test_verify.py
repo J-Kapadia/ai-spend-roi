@@ -1,6 +1,7 @@
 """`roi verify`: Scenario 2 on a fixture build, then each way a group can fail, and the control report."""
 
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -60,7 +61,8 @@ def test_scenario_2_all_three_groups_pass(built):
     assert "measured (5): finance_operations, marketing, product_engineering, sales_development, support" in out
     assert "unmeasured (2): legal_operations (too_recent), platform_engineering (no_pre_period)" in out
     assert "control (1): people_operations" in out
-    assert "checked: est_team_effect, est_att_gt, roi_team, roi_sensitivity" in out
+    assert "checked: status_rule, roi_rows, curve_alloc, agenda_items, unassigned_spend, memo_table" in out
+    assert "no site built" in out
 
 
 def test_the_groups_run_in_order_and_the_report_names_an_agenda_written_empty(built):
@@ -76,8 +78,7 @@ def test_scenario_2_with_the_curve_allocation_and_agenda_built(tmp_path):
     assert roi(work, "build", "--config", str(FIXTURE)).exit_code == 0
     result = verify(work)
     assert result.exit_code == 0, result.output
-    checked = result.output.split("checked:")[1].splitlines()[0]
-    assert "fit_curve" in checked and "alloc_result" in checked and "agenda_item" in checked
+    assert "agenda_items" in result.output.split("checked:")[1].splitlines()[0]
     assert "written empty" not in result.output
     rows = connect(str(work / "warehouse" / "roi.duckdb"), read_only=True).execute(
         "SELECT team_id FROM agenda_item ORDER BY team_id").fetchall()
@@ -264,17 +265,37 @@ def test_a_warehouse_without_estimates_exits_3(copy):
     assert verify(copy).exit_code == 3
 
 
-@pytest.mark.parametrize("table", ["fit_curve", "alloc_result"])
-def test_a_later_table_is_checked_once_it_exists(copy, table):
-    edit(copy, f"DROP TABLE IF EXISTS {table}", f"CREATE TABLE {table}(through_month VARCHAR, team_id VARCHAR)",
-         f"INSERT INTO {table} VALUES ('{THROUGH}', 'support')")
+@pytest.mark.parametrize("table", ["fit_curve", "alloc_result", "agenda_item"])
+def test_a_dropped_table_of_a_registered_step_exits_3_naming_it(copy, table):
+    edit(copy, f"DROP TABLE {table}")
     result = verify(copy)
-    assert result.exit_code == 0, result.output
-    assert table in result.output.split("checked:")[1].splitlines()[0]
-    edit(copy, f"INSERT INTO {table} VALUES ('{THROUGH}', 'legal_operations')")
+    assert result.exit_code == 3, result.output
+    assert f"the warehouse has no {table}; rebuild it" in result.output
+
+
+@pytest.mark.parametrize("table", ["fit_curve", "alloc_result"])
+def test_a_curve_or_allocation_row_for_an_unmeasured_team_fails(copy, table):
+    assert verify(copy).exit_code == 0
+    edit(copy, f"INSERT INTO {table} SELECT * REPLACE ('legal_operations' AS team_id) FROM {table}"
+               " WHERE team_id = 'support'" if table == "fit_curve" else
+         f"INSERT INTO {table} VALUES ('{THROUGH}', 100000, 'legal_operations', 0, false, 1.0, 0.0)")
     result = verify(copy)
     assert result.exit_code == 1
     assert f"team=legal_operations is unmeasured and has a row in {table}" in result.output
+
+
+def test_a_negative_amount_in_the_allocation_fails(copy):
+    allocate(copy, ("support", -1, "false"))
+    result = verify(copy)
+    assert result.exit_code == 1, result.output
+    assert "team=support has a negative amount in alloc_result (-1 cents)" in result.output
+
+
+def test_an_allocation_over_its_budget_fails(copy):
+    allocate(copy, ("support", 60000, "false"), ("marketing", 40001, "false"))
+    result = verify(copy)
+    assert result.exit_code == 1, result.output
+    assert "alloc_result allocates 100001 cents, more than its budget of 100000 cents" in result.output
 
 
 def test_an_agenda_needs_an_item_for_each_unmeasured_team_and_no_other(copy):
@@ -394,3 +415,92 @@ def test_two_funded_teams_one_uncapped_is_not_degenerate(copy):
 def test_the_warning_follows_the_through_month(copy):
     edit(copy, "INSERT INTO alloc_result VALUES ('2026-02', 100000, 'support', 100000, false, 1.0, 0.0)")
     assert "allocation degenerate" not in verify(copy).output  # a row of another month is not this month's allocation
+
+
+# ---- unassigned spend --------------------------------------------------------------------------
+
+def add_unassigned(work, month, cents):
+    """Add spend to the `unassigned` bucket of `month` in the export, the ledger and the mart together,
+    so the books still tie."""
+    edit(work,
+         f"INSERT INTO raw_ai_spend VALUES (DATE '{month}-15', 'unassigned', 'unassigned-p1', 'unassigned-u1',"
+         f" 'provider_a', 'model_a1', 1, 1, {cents})",
+         f"UPDATE raw_gl_journal SET debit_cents = debit_cents + {cents} WHERE cost_center = 'unassigned'"
+         f" AND period = '{month}' AND account_code = (SELECT value FROM roi_settings WHERE key = 'gl_account')",
+         f"UPDATE fct_ai_spend_team_month SET spend_cents = spend_cents + {cents}, gl_cents = gl_cents + {cents}"
+         f" WHERE team_id = 'unassigned' AND month = DATE '{month}-01'")
+
+
+def month_spend(work, month):
+    con = connect(str(work / "warehouse" / "roi.duckdb"), read_only=True)
+    try:
+        return con.execute("SELECT sum(spend_cents) FROM fct_ai_spend_team_month WHERE month = ?",
+                           [f"{month}-01"]).fetchone()[0]
+    finally:
+        con.close()
+
+
+def test_unassigned_spend_at_the_generator_share_does_not_warn(built):
+    assert "unassigned spend" not in verify(built).output
+
+
+def test_unassigned_spend_above_five_percent_warns_and_does_not_fail(copy):
+    total = month_spend(copy, THROUGH)
+    add_unassigned(copy, THROUGH, int(total * 0.05))  # the 2% already there plus 5% of the month: over the line
+    result = verify(copy)
+    assert result.exit_code == 0, result.output
+    assert re.search(rf"^warning: unassigned spend is 6\.\d% of company spend in {THROUGH}$", result.output, re.M)
+    assert result.output.count("unassigned spend") == 1  # the other months stay at the generator's share
+
+
+def test_unassigned_spend_just_below_five_percent_does_not_warn(copy):
+    total = month_spend(copy, THROUGH)
+    add_unassigned(copy, THROUGH, int(total * 0.025))
+    result = verify(copy)
+    assert result.exit_code == 0, result.output
+    assert "unassigned spend" not in result.output
+
+
+# ---- the memo table of a built site ------------------------------------------------------------
+
+SITE = """<!doctype html><html><body>
+<h1>Memo for <time datetime="{month}">{month}</time></h1>
+<table id="return">
+<thead><tr><th>Team</th><th>Status</th><th>Effect</th><th>Interval</th><th>Return multiple</th><th>Share of payroll</th></tr></thead>
+<tbody>
+<tr><td>{measured}</td><td>measured</td><td>0.100</td><td>[0.0, 0.2]</td><td>2.00</td><td>1.00%</td></tr>
+<tr><td>{unmeasured}</td><td>unmeasured (<code>too_recent</code>)</td><td>{effect}</td><td>-</td><td>-</td><td>3.00%</td></tr>
+<tr><td>Company</td><td colspan="4"></td><td>2.00%</td></tr>
+</tbody></table></body></html>
+"""
+
+
+def write_site(work, effect, month=THROUGH):
+    con = connect(str(work / "warehouse" / "roi.duckdb"), read_only=True)
+    names = dict(con.execute("SELECT team_id, name FROM dim_team").fetchall())
+    con.close()
+    (work / "site").mkdir()
+    (work / "site" / "index.html").write_text(SITE.format(
+        month=month, measured=names["support"], unmeasured=names["legal_operations"], effect=effect))
+
+
+def test_a_built_site_without_figures_for_unmeasured_teams_passes(copy):
+    write_site(copy, "-")
+    result = verify(copy)
+    assert result.exit_code == 0, result.output
+    assert "memo_table" in result.output.split("checked:")[1].splitlines()[0]
+    assert "no site built" not in result.output
+
+
+def test_a_hand_edited_figure_for_an_unmeasured_team_exits_1(copy):
+    write_site(copy, "0.250")
+    result = verify(copy)
+    assert result.exit_code == 1, result.output
+    assert "team=legal_operations is unmeasured and the return table shows '0.250' under 'Effect'" in result.output
+
+
+def test_a_site_of_another_month_is_not_checked(copy):
+    write_site(copy, "0.250", month="2026-02")
+    result = verify(copy)
+    assert result.exit_code == 0, result.output
+    assert "the site is for 2026-02, not 2026-03" in result.output

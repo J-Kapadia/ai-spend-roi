@@ -24,8 +24,8 @@ FORBIDDEN = {TRUTH, VERIFY_TRUTH, VERIFY_COMMAND}  # what no entry point but `ro
 # Source files that name the truth path: the work-dir layout, and the generators that write the file.
 TRUTH_PATH_WRITERS = {"roi/workdir.py", "roi/gen/books.py", "roi/gen/toy.py", "roi/commands/gen.py"}
 TRUTH_PATH_READERS = {"roi/verify_truth.py"}
-# Files that import modules by a computed name: the command loader and the step registry.
-DYNAMIC_IMPORTERS = {"roi/cli.py", "roi/steps/__init__.py"}
+# Files that import modules by a computed name: the command loader and the step and check registries.
+DYNAMIC_IMPORTERS = {"roi/cli.py", "roi/steps/__init__.py", "roi/checks/__init__.py"}
 
 
 # ---- the graph ---------------------------------------------------------------------------------
@@ -91,7 +91,7 @@ def closure(edges: dict[str, set[str]], start: str) -> set[str]:
 
 @pytest.fixture(scope="module")
 def edges():
-    return graph(SRC, "roi", registries={"roi.steps"})
+    return graph(SRC, "roi", registries={"roi.steps", "roi.checks"})
 
 
 # ---- the boundary ------------------------------------------------------------------------------
@@ -130,7 +130,7 @@ def test_nothing_but_the_verification_of_the_truth_imports_the_truth_module(edge
     assert importers <= {VERIFY_TRUTH}
 
 
-def test_computed_imports_are_confined_to_the_command_loader_and_the_step_registry():
+def test_computed_imports_are_confined_to_the_command_loader_and_the_registries():
     found = set()
     for path in (SRC / "roi").rglob("*.py"):
         text = path.read_text(encoding="utf-8")

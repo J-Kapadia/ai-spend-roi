@@ -1,4 +1,4 @@
-"""Layout rules: commands and steps are registries of one module each."""
+"""Layout rules: commands, steps and checks are registries of one module each."""
 
 import ast
 import importlib
@@ -11,12 +11,14 @@ from pathlib import Path
 import click
 import yaml
 
+import roi.checks
 import roi.commands
 import roi.steps
 from roi.cli import main
 
 ROOT = Path(__file__).resolve().parents[1]
 COMMANDS = ROOT / "src" / "roi" / "commands"
+CHECKS = ROOT / "src" / "roi" / "checks"
 
 
 def command_names() -> list[str]:
@@ -60,6 +62,36 @@ def test_steps_are_a_registry():
     assert len({s.NAME for s in steps}) == len(steps)
     for s in steps:
         assert callable(s.run)
+
+
+def test_every_check_registers():
+    files = sorted(p.stem for p in CHECKS.glob("*.py") if p.stem != "__init__")
+    checks = roi.checks.discover()
+    assert files and sorted(c.__name__.rsplit(".", 1)[1] for c in checks) == files
+    assert [c.ORDER for c in checks] == sorted({c.ORDER for c in checks}), "check ORDER must be unique"
+    assert len({c.NAME for c in checks}) == len(checks)
+    for c in checks:
+        assert callable(c.run)
+        assert c.NAME == c.__name__.rsplit(".", 1)[1], "a check is named after its file"
+
+
+def test_no_check_module_imports_another():
+    for path in sorted(CHECKS.glob("*.py")):
+        if path.name == "__init__.py":
+            continue
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.ImportFrom):
+                imported = [("." * node.level) + (node.module or "")]
+                if node.module in ("roi", "roi.checks") or node.level:
+                    imported += [imported[0] + "." + a.name for a in node.names]
+            elif isinstance(node, ast.Import):
+                imported = [a.name for a in node.names]
+            else:
+                continue
+            for name in imported:
+                assert name in ("roi.checks", "roi.checks.CheckResult") or not (
+                    name.startswith("roi.checks.") or name.startswith(".")
+                ), f"{path.name} imports {name}"
 
 
 def test_entry_point_and_slow_marker():

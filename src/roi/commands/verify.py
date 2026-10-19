@@ -67,9 +67,7 @@ def command(work: WorkDir, through: str, work_dir: Path | None) -> None:
             click.echo("(c) unmeasured discipline: not run, for the same reason")
             return
         coverage = verify_truth.check_interval_coverage(con, work, through)
-        discipline = verify_books.check_unmeasured_discipline(
-            con, through, empty_agenda_ok=not (work.root / "config" / "roi.yaml").exists()
-        )
+        discipline = verify_books.check_unmeasured_discipline(con, through, work)
         degenerate = verify_books.allocation_degenerate(con, through)
         control_sensitivity = verify_books.leave_one_control_out(estimator.read_panel(con, through), through)
     finally:
@@ -102,14 +100,14 @@ def command(work: WorkDir, through: str, work_dir: Path | None) -> None:
     )
     click.echo(f"    control ({len(control)}): {', '.join(t.team_id for t in control) or '-'}")
     click.echo(f"    checked: {', '.join(discipline.checked)}")
-    if discipline.empty:
-        click.echo(f"    written empty, no config/roi.yaml in the work dir: {', '.join(discipline.empty)}")
-    if discipline.not_built:
-        click.echo(f"    not built yet: {', '.join(discipline.not_built)}")
+    for note in discipline.notes:
+        click.echo(f"    {note}")
     all_failures += failures
     for line in failures:
         click.echo(f"    {line}")
 
+    for line in discipline.warnings:
+        click.echo(f"warning: {line}")
     if degenerate:
         click.echo(f"warning: {degenerate}")
 
