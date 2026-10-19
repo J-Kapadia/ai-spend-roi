@@ -15,8 +15,8 @@ from roi.numbers import Number, by_name, enumerate_numbers
 
 FIXTURES = Path(__file__).parent / "fixtures"
 THROUGH = "2026-03"
-# The memo HTML of the fixture company's build, whose benchmark section shows the repository's Ramp AI Index table.
-MEMO_SHA256 = "7b2159071003d091fb5ad8f4f8cec7ff4aee6fd497c71e568635878dda07a322"
+# The memo HTML of the fixture company's build, whose benchmark section shows the repository's Ramp AI Index table and whose return section carries the caveats and the pre-trend glossary.
+MEMO_SHA256 = "98f1992ab5076edb73dc69bfb6f9e8b35b1e30c8b25cb09bd9a2d2c6526a9ee1"
 
 
 @pytest.fixture(scope="module")
