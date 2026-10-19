@@ -18,7 +18,8 @@ import duckdb
 import jinja2
 
 from roi.db import connect as db_connect
-from roi import benchmark, calibration, citations, estimator, prov, verify_books
+from roi import alloc, benchmark, calibration, citations, estimator, prov, verify_books
+from roi.checks.unassigned_spend import THRESHOLD as UNASSIGNED_THRESHOLD
 from roi.numbers import SPEND_NAME, Number, by_name, enumerate_numbers, has_table
 from roi import roi as roi_calc
 from roi.prov import Record
@@ -189,6 +190,9 @@ def collect(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> tuple[
     # The headline is looked up by name: its text is the stored record's, whatever the mart says now.
     c.section = "headline"
     headline = c.stored(head)
+    unassigned = {"spend": num("unassigned_spend"), "share": num("unassigned_share"), "banner": False}
+    if unassigned["share"] is not None:
+        unassigned["banner"] = numbers["unassigned_share"].value > UNASSIGNED_THRESHOLD
 
     roi_verdicts = {}
     no_spend = set()
@@ -256,15 +260,16 @@ def collect(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> tuple[
                 allocation["rows"].append({
                     "name": name, "capped": capped, "identified": identified.get(team),
                     "amount": num(f"allocation:{team}"), "funded": num(f"funded_share:{team}"),
+                    "beyond": num(f"beyond_observed_share:{team}"),
                 })
             funded_rows = [r for r in rows if r[2] > 0]
             allocation["degenerate"] = len(funded_rows) < 2 or all(r[3] for r in funded_rows)
 
-    agenda = {"rows": [], "missing": []}
+    agenda = {"rows": [], "missing": [], "rho": num("rho")}
     items = {}
     if has_table(con, "agenda_item"):
         items = {r[0]: r for r in con.execute(
-            f"SELECT team_id, design FROM agenda_item WHERE {at}"
+            f"SELECT team_id, design, note FROM agenda_item WHERE {at}"
         ).fetchall()}
     for t in teams:
         if t["status"] != "unmeasured":
@@ -272,9 +277,10 @@ def collect(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> tuple[
         if t["team"] not in items:
             agenda["missing"].append(t["name"])
             continue
-        design = items[t["team"]][1]
+        _, design, note = items[t["team"]]
         agenda["rows"].append({
-            "name": t["name"], "reason": t["reason"], "design": DESIGN_TEXT.get(design, design),
+            "name": t["name"], "reason": t["reason"], "design": DESIGN_TEXT.get(design, design), "note": note,
+            "sigma_override": num(f"sigma_override:{t['team']}"),
             "n": num(f"agenda_n_per_arm:{t['team']}"),
             "length": num(f"agenda_length_months:{t['team']}"),
             "delta": num(f"agenda_delta:{t['team']}"),
@@ -293,7 +299,9 @@ def collect(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> tuple[
     survive_share = roi_calc.load_config(config).survive_share if config is not None else roi_calc.DEFAULT_SURVIVE_SHARE
     context = {
         "month": month, "registrations": registrations(work), "survive_share": f"{survive_share * 100:.0f}%",
-        "pretrend_level": f"{estimator.PRETREND_ALPHA * 100:.0f}%", "verdict_text": VERDICT_TEXT, "headline": headline, "teams": teams, "company_share": company_share,
+        "pretrend_level": f"{estimator.PRETREND_ALPHA * 100:.0f}%", "verdict_text": VERDICT_TEXT, "headline": headline, "unassigned": unassigned,
+        "unassigned_threshold": f"{UNASSIGNED_THRESHOLD * 100:.0f}%", "cap_excess": f"{(alloc.CAP_FACTOR - 1) * 100:.0f}%",
+        "teams": teams, "company_share": company_share,
         "sensitivity": sensitivity, "allocation": allocation, "agenda": agenda, "assumptions": assumptions,
         "unmeasured": [t for t in teams if t["status"] != "measured"], "calibration": calibration_rows(work, teams),
         "benchmark": benchmark.context(con, month, benchmark_nums),

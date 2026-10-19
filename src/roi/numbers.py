@@ -3,7 +3,8 @@
 `enumerate_numbers` lists the numbers of a month's memo in a fixed order: the headline spend,
 the payroll shares, the effects and their intervals, the return figures, the sensitivity grid,
 the allocation, the agenda, the value-per-unit assumptions taken from the config file and the published
-benchmark figures. Each
+benchmark figures. The month's unassigned spend (the bucket with no owning team) follows the headline when
+the books hold one; the agenda's within-user correlation and any configured sigma override come from the config file. Each
 one names the model and the source-row predicate (bounded at the month) that back it and carries
 the text to print. The build step that stores provenance and the memo that prints the numbers
 both call it, so the two cannot disagree about which numbers exist or how they read.
@@ -16,10 +17,13 @@ from pathlib import Path
 
 import duckdb
 
-from roi import benchmark, prov
+from roi import alloc, benchmark, prov
 from roi import roi as roi_calc
 from roi.steps.provenance import SPEND_NAME
 from roi.workdir import RoiError
+
+UNASSIGNED = "unassigned"
+
 
 @dataclass(frozen=True)
 class Number:
@@ -68,6 +72,19 @@ def enumerate_numbers(con: duckdb.DuckDBPyConnection, through: str, config: Path
     if cents is None:
         raise RoiError(2, f"no results for month {through}")
     add("headline", SPEND_NAME, "fct_team_month", spend_where, f"${cents // 100:,}.{cents % 100:02d}", cents / 100)
+
+    # Absent when the books hold no unassigned bucket for the month, so a company without one prints no such line.
+    if has_table(con, "fct_ai_spend_team_month"):
+        unassigned = con.execute(
+            f"SELECT sum(spend_cents)::BIGINT FROM fct_ai_spend_team_month WHERE {spend_where} AND team_id = '{UNASSIGNED}'"
+        ).fetchone()[0]
+        total = con.execute(f"SELECT sum(spend_cents)::BIGINT FROM fct_ai_spend_team_month WHERE {spend_where}").fetchone()[0]
+        if unassigned is not None and total:
+            add("headline", "unassigned_spend", "fct_ai_spend_team_month", f"{spend_where} AND team_id = '{UNASSIGNED}'",
+                usd(unassigned), unassigned / 100)
+            # The share rests on the whole month, since its denominator is every bucket's spend.
+            add("headline", "unassigned_share", "fct_ai_spend_team_month", spend_where,
+                f"{unassigned / total * 100:.1f}%", unassigned / total)
 
     roi_rows = {}
     if has_table(con, "roi_team"):
@@ -139,20 +156,34 @@ def enumerate_numbers(con: duckdb.DuckDBPyConnection, through: str, config: Path
 
     if has_table(con, "alloc_result"):
         rows = con.execute(
-            "SELECT a.team_id, a.budget_cents, a.amount_cents, a.funded_share_in_draws"
+            "SELECT a.team_id, a.budget_cents, a.amount_cents, a.funded_share_in_draws, a.beyond_observed_share"
             f" FROM alloc_result a JOIN dim_team t USING (team_id) WHERE a.{at} ORDER BY t.name"
         ).fetchall()
         if rows:
             add("allocation", "allocation_budget", "alloc_result", at, usd(rows[0][1]), rows[0][1] / 100)
-            for team, _, amount, funded in rows:
+            for team, _, amount, funded, beyond in rows:
                 where = f"{at} AND team_id = '{_q(team)}'"
                 add("allocation", f"allocation:{team}", "alloc_result", where, usd(amount), amount / 100)
                 add("allocation", f"funded_share:{team}", "alloc_result", where, f"{funded * 100:.0f}%", funded)
+                if beyond is not None:
+                    add("allocation", f"beyond_observed_share:{team}", "alloc_result", where, f"{beyond * 100:.0f}%", beyond)
 
     if has_table(con, "agenda_item"):
         items = {r[0]: r for r in con.execute(
             f"SELECT team_id, design, n_per_arm, length_months, delta FROM agenda_item WHERE {at}"
         ).fetchall()}
+        assumed = [team for team in unmeasured if team in items]
+        if assumed and config is not None:
+            alloc_cfg = alloc.load_config(config)
+            if alloc_cfg is not None:
+                predicate = prov.config_predicate(config.name, "rho")
+                if prov.config_rows(predicate, config)[1]:
+                    add("agenda", "rho", prov.CONFIG_MODEL, predicate, f"{alloc_cfg.rho:g}", alloc_cfg.rho)
+                for team in assumed:
+                    if team in alloc_cfg.sigma_override:
+                        sigma = alloc_cfg.sigma_override[team]
+                        add("agenda", f"sigma_override:{team}", prov.CONFIG_MODEL,
+                            prov.config_predicate(config.name, f"sigma_override.{team}"), f"{sigma:g}", sigma)
         for team in unmeasured:
             if team not in items:
                 continue

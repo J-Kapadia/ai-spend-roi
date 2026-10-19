@@ -27,6 +27,12 @@ a { color: inherit; text-decoration: underline dotted; }
 <p class="banner" id="planted">{{ PLANTED_STATEMENT }}</p>
 <p id="registrations">{% if registrations is none %}The seed is not yet registered.{% else %}The seed has been registered <span class="lit">{{ registrations }}</span> {{ 'time' if registrations == 1 else 'times' }}.{% endif %}</p>
 <p>Company AI spend in <time datetime="{{ month }}">{{ month }}</time> was {{ num(headline) }}. Every number below links to the source rows that produced it.</p>
+{% if unassigned.spend %}
+<p id="unassigned">Unassigned spend (no owning team): {{ num(unassigned.spend) }}, {{ num(unassigned.share) }} of company spend.</p>
+{% if unassigned.banner %}
+<p class="banner" id="unassigned-banner">More than <span class="lit">{{ unassigned_threshold }}</span> of company spend has no owning team, so the team figures below leave that spend out.</p>
+{% endif %}
+{% endif %}
 
 <h2 id="pays-off">Does our AI spend pay off?</h2>
 <p>A return is reported only for a team that has a fair comparison: teams that did not yet have AI tools at the time. Everywhere else the answer is unmeasured, with the reason. An effect is in log points of the team's own output, close to a percentage change when small, with a <span class="lit">95%</span> interval. The return multiple is the dollar value of the extra output divided by the AI spend in the same window, and one is break-even.</p>
@@ -87,13 +93,14 @@ a { color: inherit; text-decoration: underline dotted; }
 {% endif %}
 <p>Monthly increment to allocate: {{ num(allocation.budget) }}.</p>
 <table id="allocation">
-<thead><tr><th>Team</th><th>Increment</th><th>Funded in this share of draws</th><th>At cap</th><th>Curve</th></tr></thead>
+<thead><tr><th>Team</th><th>Increment</th><th>Funded in this share of draws</th><th>Above the highest spend seen</th><th>At cap</th><th>Curve</th></tr></thead>
 <tbody>
 {% for r in allocation.rows %}
-<tr><td>{{ r.name }}</td><td>{{ num(r.amount) }}</td><td>{{ num(r.funded) }}</td><td>{{ 'yes' if r.capped else 'no' }}</td><td>{% if r.identified is none %}{{ dash() }}{% elif r.identified %}identified{% else %}not identified{% endif %}</td></tr>
+<tr><td>{{ r.name }}</td><td>{{ num(r.amount) }}</td><td>{{ num(r.funded) }}</td><td>{% if r.beyond %}{{ num(r.beyond) }}{% else %}{{ dash() }}{% endif %}</td><td>{{ 'yes' if r.capped else 'no' }}</td><td>{% if r.identified is none %}{{ dash() }}{% elif r.identified %}identified{% else %}curve not identified; experiment before budget{% endif %}</td></tr>
 {% endfor %}
 </tbody>
 </table>
+<p id="extrapolation">Above the highest spend seen is the share of the increment that lies above the highest monthly spend the team has shown. The allocation is bounded extrapolation: no team is given more than <span class="lit">{{ cap_excess }}</span> beyond its highest observed spend.</p>
 {% else %}
 <p>No allocation was written for this month: it needs a monthly increment and a measured team with a return.</p>
 {% endif %}
@@ -101,13 +108,16 @@ a { color: inherit; text-decoration: underline dotted; }
 <h2 id="test-next">What should we test next?</h2>
 {% if agenda.rows %}
 <table id="agenda">
-<thead><tr><th>Team</th><th>Why unmeasured</th><th>Design</th><th>Per arm</th><th>Months</th><th>Smallest effect it can detect</th></tr></thead>
+<thead><tr><th>Team</th><th>Why unmeasured</th><th>Design</th><th>Per arm</th><th>Months</th><th>Smallest effect it can detect</th><th>Note</th></tr></thead>
 <tbody>
 {% for r in agenda.rows %}
-<tr><td>{{ r.name }}</td><td><code>{{ r.reason }}</code></td><td>{{ r.design }}</td><td>{% if r.n %}{{ num(r.n) }}{% else %}{{ dash() }}{% endif %}</td><td>{% if r.length %}{{ num(r.length) }}{% else %}{{ dash() }}{% endif %}</td><td>{% if r.delta %}{{ num(r.delta) }}{% else %}{{ dash() }}{% endif %}</td></tr>
+<tr><td>{{ r.name }}</td><td><code>{{ r.reason }}</code></td><td>{{ r.design }}</td><td>{% if r.n %}{{ num(r.n) }}{% else %}{{ dash() }}{% endif %}</td><td>{% if r.length %}{{ num(r.length) }}{% else %}{{ dash() }}{% endif %}</td><td>{% if r.delta %}{{ num(r.delta) }}{% else %}{{ dash() }}{% endif %}</td><td><span class="lit">{{ r.note or "" }}</span>{% if r.sigma_override %}; spread of {{ num(r.sigma_override) }} (config assumption){% endif %}</td></tr>
 {% endfor %}
 </tbody>
 </table>
+{% if agenda.rho %}
+<p id="rho">Within-user correlation assumed: {{ num(agenda.rho) }} (config assumption).</p>
+{% endif %}
 {% endif %}
 {% if agenda.missing %}
 <p>No experiment has been designed yet for: {{ agenda.missing | join(', ') }}.</p>

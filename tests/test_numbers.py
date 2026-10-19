@@ -16,7 +16,7 @@ from roi.numbers import Number, by_name, enumerate_numbers
 FIXTURES = Path(__file__).parent / "fixtures"
 THROUGH = "2026-03"
 # The memo HTML of the fixture company's build, whose benchmark section shows the repository's Ramp AI Index table and whose return section carries the caveats and the pre-trend glossary.
-MEMO_SHA256 = "98f1992ab5076edb73dc69bfb6f9e8b35b1e30c8b25cb09bd9a2d2c6526a9ee1"
+MEMO_SHA256 = "8007e8e7517a3731ef80a704e2b79a29d40d2a94128e0f5df5964670e6cdbdbc"
 
 
 @pytest.fixture(scope="module")
@@ -70,7 +70,17 @@ def test_config_numbers_have_the_config_model(numbers):
     assumptions = [n for n in numbers if n.section == "assumptions"]
     assert assumptions
     assert all(n.source_model == "config" for n in assumptions)
-    assert all(n.source_model != "config" for n in numbers if n.section != "assumptions")
+    # The agenda's within-user correlation (and any sigma override) is a config assumption too.
+    from_config = {n.name for n in numbers if n.source_model == "config" and n.section != "assumptions"}
+    assert from_config == {"rho"}
+
+
+def test_the_new_allocation_and_unassigned_numbers_are_enumerated(numbers):
+    named = by_name(numbers)
+    assert named["beyond_observed_share:support"].source_model == "alloc_result"
+    assert named["unassigned_spend"].source_predicate == f"month = DATE '{THROUGH}-01' AND team_id = 'unassigned'"
+    assert named["unassigned_share"].section == "headline"
+    assert named["rho"].source_predicate == "roi.yaml: rho"
 
 
 def test_the_headline_comes_first_and_every_section_appears(numbers):

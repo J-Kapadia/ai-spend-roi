@@ -84,7 +84,7 @@ def test_the_check_reports_sections_and_lists_the_static_numbers(built):
     for section in ("headline", "return", "allocation", "agenda", "assumptions"):
         assert f"  {section}: " in out
     listed = re.search(r"static numbers for review: (.*)", out).group(1).split(", ")
-    assert listed == ["95%", "1", "90%", "1", "10%"]
+    assert listed == ["95%", "1", "90%", "1", "50%", "5", "6", "4", "10%"]
 
 
 def test_a_measured_teams_figures_are_the_warehouse_figures(built):
@@ -477,3 +477,130 @@ def test_a_team_name_is_escaped_in_the_rendered_page(built):
     html = memo._env.get_template("memo.html.j2").render(**context)
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
     assert "<script" not in html
+
+
+# ---- the allocation, the agenda and the unassigned spend -------------------------------------------------
+
+def section_of(html: str, ident: str, end: str) -> str:
+    start = html.index(f'id="{ident}"')
+    return html[start:html.index(end, start)]
+
+
+def allocation_row(html: str, name: str) -> str:
+    return next(r for r in section_of(html, "allocation", "</table>").split("<tr>") if r.startswith(f"<td>{name}</td>"))
+
+
+def test_each_allocation_row_states_the_share_above_the_highest_spend_seen(built):
+    html = html_of(built)
+    con = connect(str(built / "warehouse" / "roi.duckdb"), read_only=True)
+    rows = con.execute("SELECT t.name, a.beyond_observed_share FROM alloc_result a JOIN dim_team t USING (team_id)"
+                       f" WHERE a.through_month = '{THROUGH}'").fetchall()
+    assert rows and "<th>Above the highest spend seen</th>" in html
+    for name, share in rows:
+        assert f">{share * 100:.0f}%</span>" in allocation_row(html, name), name
+
+
+def test_the_allocation_is_described_as_bounded_extrapolation(built):
+    html = html_of(built)
+    text = section_of(html, "extrapolation", "</p>")
+    assert "bounded extrapolation" in text and "highest monthly spend the team has shown" in text
+    assert '<span class="lit">50%</span> beyond its highest observed spend' in text
+    assert html.index('id="allocation"') < html.index('id="extrapolation"') < html.index('id="test-next"')
+
+
+def test_a_beyond_observed_share_of_one_is_printed_as_a_hundred_percent(copy):
+    edit(copy, "UPDATE alloc_result SET beyond_observed_share = 1.0 WHERE team_id = 'support'")
+    reprove(copy)
+    assert ">100%</span>" in allocation_row(memo_of(copy, THROUGH, "--check"), "Support")
+
+
+def test_a_curve_that_is_not_identified_says_to_experiment_before_budget(copy):
+    edit(copy, "UPDATE fit_curve SET identified = false WHERE team_id = 'support'")
+    html = memo_of(copy, THROUGH, "--check")
+    assert "curve not identified; experiment before budget</td>" in allocation_row(html, "Support")
+    edit(copy, "UPDATE fit_curve SET identified = true WHERE team_id = 'support'")
+    html = memo_of(copy, THROUGH, "--check")
+    row = allocation_row(html, "Support")
+    assert "<td>identified</td>" in row and "not identified" not in row
+
+
+def test_the_agenda_rows_state_their_note_and_the_assumed_correlation(built):
+    html = html_of(built)
+    table = section_of(html, "agenda", "</table>")
+    assert "<th>Note</th>" in table
+    con = connect(str(built / "warehouse" / "roi.duckdb"), read_only=True)
+    notes = con.execute(f"SELECT note FROM agenda_item WHERE through_month = '{THROUGH}'").fetchall()
+    assert notes and all(note in table for (note,) in notes)
+    assert "the base-month noise does not shrink with waiting" in table
+    rho = section_of(html, "rho", "</p>")
+    assert "Within-user correlation assumed: " in rho and ">0.05</span>" in rho and "(config assumption)" in rho
+    assert html.index('id="agenda"') < html.index('id="rho"') < html.index('id="assumptions"')
+
+
+def test_rho_resolves_to_the_config_file(built):
+    con = memo.open_warehouse(WorkDir(built))
+    _, collected = memo.collect(WorkDir(built), THROUGH, con)
+    rec = next(r for r in collected.records.values() if r.name == "rho")
+    assert (rec.source_model, rec.source_predicate) == ("config", "roi.yaml: rho")
+
+
+def test_a_configured_sigma_is_printed_as_a_config_assumption(copy):
+    config = copy / "config" / "roi.yaml"
+    config.write_text(config.read_text() + "sigma_override: {platform_engineering: 7.5}\n")
+    reprove(copy)
+    html = memo_of(copy, THROUGH, "--check")
+    agenda = section_of(html, "agenda", "</table>")
+    cell = next(r for r in agenda.split("<tr>") if r.startswith("<td>Platform Engineering</td>"))
+    assert ">7.5</span></a> (config assumption)" in cell
+    assert "config assumption" not in next(r for r in agenda.split("<tr>") if r.startswith("<td>Legal Operations</td>"))
+
+
+def add_unassigned(work, cents):
+    """Add spend to the unassigned bucket of the month in the export, the ledger and the mart together, so the books still tie."""
+    edit(work,
+         f"INSERT INTO raw_ai_spend VALUES (DATE '{THROUGH}-15', 'unassigned', 'unassigned-p1', 'unassigned-u1',"
+         f" 'provider_a', 'model_a1', 1, 1, {cents})",
+         f"UPDATE raw_gl_journal SET debit_cents = debit_cents + {cents} WHERE cost_center = 'unassigned'"
+         f" AND period = '{THROUGH}' AND account_code = (SELECT value FROM roi_settings WHERE key = 'gl_account')",
+         f"UPDATE fct_ai_spend_team_month SET spend_cents = spend_cents + {cents}, gl_cents = gl_cents + {cents}"
+         f" WHERE team_id = 'unassigned' AND month = DATE '{THROUGH}-01'")
+
+
+def test_the_unassigned_spend_line_appears_without_a_banner_below_five_percent(built):
+    html = html_of(built)
+    line = section_of(html, "unassigned", "</p>")
+    assert "Unassigned spend (no owning team): " in line and "of company spend" in line
+    assert "$32.80" in line and "2.0%" in line
+    assert "unassigned-banner" not in html
+
+
+def test_the_unassigned_numbers_resolve_to_the_unassigned_bucket(built):
+    con = memo.open_warehouse(WorkDir(built))
+    _, collected = memo.collect(WorkDir(built), THROUGH, con)
+    recs = {r.name: r for r in collected.records.values() if r.name.startswith("unassigned_")}
+    assert set(recs) == {"unassigned_spend", "unassigned_share"}
+    assert "team_id = 'unassigned'" in recs["unassigned_spend"].source_predicate
+    assert all(f"month = DATE '{THROUGH}-01'" in r.source_predicate for r in recs.values())
+    assert all(r.source_model == "fct_ai_spend_team_month" for r in recs.values())
+
+
+def test_a_banner_appears_when_the_unassigned_spend_is_above_five_percent(copy):
+    total = connect(str(copy / "warehouse" / "roi.duckdb"), read_only=True).execute(
+        f"SELECT sum(spend_cents) FROM fct_ai_spend_team_month WHERE month = DATE '{THROUGH}-01'").fetchone()[0]
+    add_unassigned(copy, int(total * 0.05))
+    reprove(copy)
+    html = memo_of(copy, THROUGH, "--check")
+    banner = section_of(html, "unassigned-banner", "</p>")
+    assert 'class="lit">5%</span>' in banner
+    assert html.index('id="unassigned"') < html.index('id="unassigned-banner"') < html.index("<h2")
+    assert 'class="banner" id="unassigned-banner"' in html
+
+
+def test_without_an_unassigned_bucket_the_line_and_the_banner_are_absent(copy):
+    edit(copy, "DELETE FROM raw_ai_spend WHERE team_id = 'unassigned'",
+         "DELETE FROM raw_gl_journal WHERE cost_center = 'unassigned'",
+         "DELETE FROM fct_ai_spend_team_month WHERE team_id = 'unassigned'")
+    reprove(copy)
+    html = memo_of(copy, THROUGH, "--check")
+    assert "Unassigned spend" not in html and "unassigned-banner" not in html
+    assert roi(copy, "memo", "--month", THROUGH, "--check").exit_code == 0
