@@ -19,10 +19,10 @@ import jinja2
 
 from roi.db import connect as db_connect
 from roi import calibration, prov, verify_books
+from roi.numbers import SPEND_NAME, Number, by_name, enumerate_numbers, has_table
 from roi import roi as roi_calc
 from roi.prov import Record
 from roi.steps import roi as roi_step
-from roi.steps.provenance import SPEND_NAME
 from roi.workdir import RoiError, WorkDir
 
 # A "number" in the memo body.
@@ -82,26 +82,10 @@ class Collector:
     def stored(self, rec: Record) -> Num:
         return self._keep(rec)
 
-    def num(self, name: str, model: str, predicate: str, display: str, value: float) -> Num:
-        return self._keep(prov.derive(self.con, name, self.month, model, predicate, display, value, self.config))
-
-
-def usd(cents: int) -> str:
-    return f"{'-' if cents < 0 else ''}${abs(cents) // 100:,}.{abs(cents) % 100:02d}"
-
-
-def usd_unit(v: float) -> str:
-    return f"${v:,.2f}" if v >= 1 else f"${v:.4f}"
-
-
-def _q(value: str) -> str:
-    return value.replace("'", "''")
-
-
-def _has(con: duckdb.DuckDBPyConnection, table: str) -> bool:
-    return bool(con.execute(
-        "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'main' AND table_name = ?", [table]
-    ).fetchone()[0])
+    def number(self, n: Number) -> Num:
+        self.section = n.section
+        rec = prov.derive(self.con, n.name, self.month, n.source_model, n.source_predicate, n.display_value, n.value, self.config)
+        return self._keep(rec)
 
 
 def calibration_path(roi_config: Path) -> Path:
@@ -145,130 +129,84 @@ def collect(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> tuple[
         raise RoiError(2, f"no results for month {month}")
     config = roi_config_path(work)
     c = Collector(con, month, config)
+    numbers = by_name(enumerate_numbers(con, month, config))
     at = f"through_month = '{month}'"
 
+    def num(name: str) -> Num | None:
+        n = numbers.get(name)
+        return None if n is None else c.number(n)
+
+    # The headline is the record the build stored; every other number is derived from the warehouse.
     c.section = "headline"
     headline = c.stored(head)
 
-    c.section = "return"
-    roi_rows = {}
-    if _has(con, "roi_team"):
-        for team, spend, benefit, mult, lo, hi, verdict in con.execute(
-            "SELECT team_id, spend_cents, benefit_cents, roi_multiple, roi_lo, roi_hi, roi_verdict"
-            f" FROM roi_team WHERE {at}"
-        ).fetchall():
-            roi_rows[team] = (spend, benefit, mult, lo, hi, verdict)
-    share_rows = {}
-    if _has(con, "fct_ai_share_of_payroll"):
-        share_rows = {
-            team: share for team, share in con.execute(
-                "SELECT team_id, share FROM fct_ai_share_of_payroll WHERE month = ?", [f"{month}-01"]
-            ).fetchall()
-        }
-
-    def share_num(team: str | None) -> Num | None:
-        if team not in share_rows or share_rows[team] is None:
-            return None
-        who = "company" if team is None else team
-        where = "team_id IS NULL" if team is None else f"team_id = '{_q(team)}'"
-        share = float(share_rows[team])
-        return c.num(f"payroll_share:{who}", "fct_ai_share_of_payroll", f"month = DATE '{month}-01' AND {where}",
-                     f"{share * 100:.2f}%", share)
+    roi_verdicts = {}
+    if has_table(con, "roi_team"):
+        roi_verdicts = dict(con.execute(f"SELECT team_id, roi_verdict FROM roi_team WHERE {at}").fetchall())
 
     teams = []
-    for team, name, status, reason, effect, lo, hi, unit, kind in con.execute(
-        "SELECT t.team_id, t.name, e.status, e.reason, e.effect, e.ci_lo, e.ci_hi, t.unit_label, t.kind"
+    for team, name, status, reason, unit, kind in con.execute(
+        "SELECT t.team_id, t.name, e.status, e.reason, t.unit_label, t.kind"
         f" FROM est_team_effect e JOIN dim_team t USING (team_id) WHERE e.{at} ORDER BY t.name"
     ).fetchall():
         row = {"team": team, "name": name, "status": status, "reason": reason, "unit": unit, "kind": kind,
-               "share": share_num(team), "measured": status == "measured", "roi": None}
+               "share": num(f"payroll_share:{team}"), "measured": status == "measured", "roi": None}
         if status == "measured":
-            where = f"{at} AND team_id = '{_q(team)}'"
-
-            def effect_num(label: str, v: float) -> Num:
-                return c.num(f"{label}:{team}", "est_team_effect", where, f"{v:.3f}", v)
-
-            row["effect"], row["lo"], row["hi"] = effect_num("effect", effect), effect_num("effect_lo", lo), effect_num("effect_hi", hi)
-            if team in roi_rows:
-                spend, benefit, mult, rlo, rhi, verdict = roi_rows[team]
-                where = f"{at} AND team_id = '{_q(team)}'"
-
-                def roi_num(label: str, model: str, v: float | None, text: str | None = None) -> Num | None:
-                    if v is None:
-                        return None
-                    return c.num(f"{label}:{team}", model, where, text or f"{v:.2f}", v)
-
+            row["effect"], row["lo"], row["hi"] = num(f"effect:{team}"), num(f"effect_lo:{team}"), num(f"effect_hi:{team}")
+            if team in roi_verdicts:
+                verdict = roi_verdicts[team]
                 row["roi"] = {
-                    "spend": c.num(f"spend:{team}", "roi_team", where, usd(spend), spend / 100),
-                    "benefit": c.num(f"benefit:{team}", "roi_team", where, usd(benefit), benefit / 100),
-                    "multiple": roi_num("roi", "roi_team", mult),
-                    "lo": roi_num("roi_lo", "roi_team", rlo),
-                    "hi": roi_num("roi_hi", "roi_team", rhi),
+                    "spend": num(f"spend:{team}"),
+                    "benefit": num(f"benefit:{team}"),
+                    "multiple": num(f"roi:{team}"),
+                    "lo": num(f"roi_lo:{team}"),
+                    "hi": num(f"roi_hi:{team}"),
                     "verdict": VERDICT_TEXT.get(verdict, verdict),
                 }
         else:
             row["why"] = REASON_TEXT.get(reason, "no comparison group is available") if status == "unmeasured" else None
         teams.append(row)
-    company_share = share_num(None)
+    company_share = num("payroll_share:company")
 
     sensitivity = {"multipliers": [], "rows": []}
-    if _has(con, "roi_sensitivity") and roi_rows:
+    if has_table(con, "roi_sensitivity") and roi_verdicts:
         grid = con.execute(
-            f"SELECT team_id, value_multiplier, roi_multiple, roi_survives_share FROM roi_sensitivity WHERE {at}"
-            " ORDER BY team_id, value_multiplier"
+            f"SELECT team_id, value_multiplier FROM roi_sensitivity WHERE {at} ORDER BY team_id, value_multiplier"
         ).fetchall()
-        multipliers = sorted({m for _, m, _, _ in grid})
+        multipliers = sorted({m for _, m in grid})
         names = {t["team"]: t["name"] for t in teams}
-        cells: dict[str, dict] = {}
-        for team, m, mult, share in grid:
-            cells.setdefault(team, {"cells": {}, "share": share})["cells"][m] = mult
-        sensitivity["multipliers"] = [
-            c.num(f"multiplier:{m!r}", "roi_sensitivity", f"{at} AND value_multiplier = {m!r}", f"{m:g}", m)
-            for m in multipliers
-        ]
-        for team in sorted(cells, key=lambda t: names.get(t, t)):
-            entry = cells[team]
-            where = f"{at} AND team_id = '{_q(team)}'"
+        sensitivity["multipliers"] = [num(f"multiplier:{m!r}") for m in multipliers]
+        for team in sorted({team for team, _ in grid}, key=lambda t: names.get(t, t)):
             sensitivity["rows"].append({
                 "name": names.get(team, team),
-                "cells": [
-                    c.num(f"sensitivity:{team}:{m!r}", "roi_sensitivity", f"{where} AND value_multiplier = {m!r}",
-                          f"{entry['cells'][m]:.2f}", entry["cells"][m]) if entry["cells"].get(m) is not None else None
-                    for m in multipliers
-                ],
-                "survives": c.num(f"survives:{team}", "roi_sensitivity", where, f"{entry['share'] * 100:.0f}%", entry["share"])
-                if entry["share"] is not None else None,
+                "cells": [num(f"sensitivity:{team}:{m!r}") for m in multipliers],
+                "survives": num(f"survives:{team}"),
             })
 
-    c.section = "allocation"
     allocation = {"budget": None, "rows": [], "degenerate": False}
-    if _has(con, "alloc_result"):
+    if has_table(con, "alloc_result"):
         identified = {}
-        if _has(con, "fit_curve"):
+        if has_table(con, "fit_curve"):
             identified = dict(con.execute(f"SELECT team_id, identified FROM fit_curve WHERE {at}").fetchall())
         rows = con.execute(
-            "SELECT a.team_id, t.name, a.budget_cents, a.amount_cents, a.capped, a.funded_share_in_draws"
+            "SELECT a.team_id, t.name, a.amount_cents, a.capped"
             f" FROM alloc_result a JOIN dim_team t USING (team_id) WHERE a.{at} ORDER BY t.name"
         ).fetchall()
         if rows:
-            budget = rows[0][2]
-            allocation["budget"] = c.num("allocation_budget", "alloc_result", at, usd(budget), budget / 100)
-            for team, name, _, amount, capped, funded in rows:
-                where = f"{at} AND team_id = '{_q(team)}'"
+            allocation["budget"] = num("allocation_budget")
+            for team, name, _, capped in rows:
                 allocation["rows"].append({
                     "name": name, "capped": capped, "identified": identified.get(team),
-                    "amount": c.num(f"allocation:{team}", "alloc_result", where, usd(amount), amount / 100),
-                    "funded": c.num(f"funded_share:{team}", "alloc_result", where, f"{funded * 100:.0f}%", funded),
+                    "amount": num(f"allocation:{team}"), "funded": num(f"funded_share:{team}"),
                 })
-            funded_rows = [r for r in rows if r[3] > 0]
-            allocation["degenerate"] = len(funded_rows) < 2 or all(r[4] for r in funded_rows)
+            funded_rows = [r for r in rows if r[2] > 0]
+            allocation["degenerate"] = len(funded_rows) < 2 or all(r[3] for r in funded_rows)
 
-    c.section = "agenda"
     agenda = {"rows": [], "missing": []}
     items = {}
-    if _has(con, "agenda_item"):
+    if has_table(con, "agenda_item"):
         items = {r[0]: r for r in con.execute(
-            "SELECT team_id, design, n_per_arm, length_months, delta FROM agenda_item WHERE " + at
+            f"SELECT team_id, design FROM agenda_item WHERE {at}"
         ).fetchall()}
     for t in teams:
         if t["status"] != "unmeasured":
@@ -276,35 +214,20 @@ def collect(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> tuple[
         if t["team"] not in items:
             agenda["missing"].append(t["name"])
             continue
-        _, design, n, length, delta = items[t["team"]]
-        where = f"{at} AND team_id = '{_q(t['team'])}'"
-
-        def item_num(label: str, v, text: str) -> Num | None:
-            return None if v is None else c.num(f"{label}:{t['team']}", "agenda_item", where, text, v)
-
+        design = items[t["team"]][1]
         agenda["rows"].append({
             "name": t["name"], "reason": t["reason"], "design": DESIGN_TEXT.get(design, design),
-            "n": item_num("agenda_n_per_arm", n, f"{n:,}" if n is not None else ""),
-            "length": item_num("agenda_length_months", length, f"{length:,}" if length is not None else ""),
-            "delta": item_num("agenda_delta", delta, f"{delta:.3f}" if delta is not None else ""),
+            "n": num(f"agenda_n_per_arm:{t['team']}"),
+            "length": num(f"agenda_length_months:{t['team']}"),
+            "delta": num(f"agenda_delta:{t['team']}"),
         })
 
-    c.section = "assumptions"
     assumptions = []
-    if config is not None:
-        cfg = roi_calc.load_config(config)
-        for t in teams:
-            tc = cfg.teams.get(t["team"])
-            if not t["measured"] or tc is None or tc.value is None:
-                continue
-            nums = []
-            for part in ("low", "base", "high"):
-                v = getattr(tc.value, part)
-                key = f"value_per_unit.{t['team']}.{part}"
-                nums.append(c.num(f"value_{part}:{t['team']}", prov.CONFIG_MODEL,
-                                  prov.config_predicate(config.name, key), usd_unit(v), v))
-            assumptions.append({"name": t["name"], "unit": t["unit"], "kind": t["kind"], "low": nums[0],
-                                "base": nums[1], "high": nums[2]})
+    for t in teams:
+        if not t["measured"] or f"value_low:{t['team']}" not in numbers:
+            continue
+        low, base, high = (num(f"value_{part}:{t['team']}") for part in ("low", "base", "high"))
+        assumptions.append({"name": t["name"], "unit": t["unit"], "kind": t["kind"], "low": low, "base": base, "high": high})
 
     context = {
         "month": month, "headline": headline, "teams": teams, "company_share": company_share,
