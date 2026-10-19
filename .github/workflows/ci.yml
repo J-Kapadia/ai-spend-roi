@@ -28,3 +28,19 @@ jobs:
           uv run --frozen roi build --toy --work-dir "$work"
           uv run --frozen roi memo --month 2025-06 --check --work-dir "$work"
           uv run --frozen roi doctor --tree --work-dir "$work"
+
+  full:
+    # The whole definition of done, as the dispatcher's clean-extraction gate runs it, on every push to main.
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install the locked dependencies
+        run: uv sync --frozen
+      - name: Full definition of done
+        run: timeout 3600 scripts/definition-of-done.sh
