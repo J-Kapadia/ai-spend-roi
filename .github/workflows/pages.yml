@@ -1,7 +1,8 @@
 name: pages
 
-# Manual only, until the real company's configuration is committed.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
