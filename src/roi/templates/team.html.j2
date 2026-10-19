@@ -1,0 +1,81 @@
+{% macro num(n) %}<a href="{{ root }}prov/{{ n.prov_id }}.html"><span data-prov="{{ n.prov_id }}">{{ n.text }}</span></a>{% endmacro %}
+{% macro dash() %}-{% endmacro %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ team.name }}: AI spend memo</title>
+<style>
+body { font: 16px/1.5 system-ui, sans-serif; max-width: 62rem; margin: 0 auto; padding: 1rem; color: #1b1f24; background: #fff; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; display: block; overflow-x: auto; }
+th, td { border-bottom: 1px solid #d0d7de; padding: 0.3rem 0.6rem; text-align: right; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+.banner { border-left: 4px solid #9a6700; background: #fff8c5; padding: 0.6rem 1rem; }
+.warning { border-left: 4px solid #cf222e; background: #ffebe9; padding: 0.6rem 1rem; }
+a { color: inherit; text-decoration: underline dotted; }
+@media (prefers-color-scheme: dark) {
+  body { color: #e6edf3; background: #0d1117; }
+  th, td { border-bottom-color: #30363d; }
+  .banner { background: #3b2e00; border-left-color: #d4a72c; }
+  .warning { background: #3d1418; border-left-color: #f85149; }
+}
+</style>
+</head>
+<body>
+<h1>{{ team.name }}</h1>
+<p><a href="{{ root }}index.html">Back to the memo</a> for <time datetime="{{ month }}">{{ month }}</time></p>
+<p class="banner" id="planted">{{ PLANTED_STATEMENT }}</p>
+<p id="metric">Output measured as {{ team.unit }} (<code>{{ team.metric }}</code>); {{ team.direction }}.</p>
+<p id="status">Status: {{ team.status }}{% if team.reason %} (<code>{{ team.reason }}</code>){% endif %}.{% if team.status == 'control' %} The team has had no AI tools in the whole history, so there is nothing to compare, and it is the comparison for the others.{% elif team.status == 'unmeasured' %} {{ team.why }} No return is reported for it.{% endif %}{% if team.measured and team.single_control %} One comparison team only: the interval rests on one control series.{% endif %}{% if team.measured and not team.pretrend_testable %} The pre-trend test is not possible for this team.{% endif %}</p>
+{% if team.share %}
+<p id="share">Share of payroll: {{ num(team.share) }}.</p>
+{% endif %}
+{% if team.measured %}
+<h2 id="effect">Effect</h2>
+<p>The effect on the team's output, in log points, is {{ num(team.effect) }} with an interval of [{{ num(team.lo) }}, {{ num(team.hi) }}].{% if team.harmful %} The effect is negative: review the rollout.{% endif %}</p>
+<h2 id="return">Return</h2>
+{% if team.roi %}
+<table id="return-row">
+<thead><tr><th>AI spend</th><th>Output value</th><th>Return multiple</th><th>Return interval</th><th>Verdict</th></tr></thead>
+<tbody>
+<tr><td>{{ num(team.roi.spend) }}</td><td>{{ num(team.roi.benefit) }}</td><td>{% if team.roi.multiple %}{{ num(team.roi.multiple) }}{% elif team.roi.no_spend %}no spend{% else %}{{ dash() }}{% endif %}</td><td>{% if team.roi.lo and team.roi.hi %}[{{ num(team.roi.lo) }}, {{ num(team.roi.hi) }}]{% else %}{{ dash() }}{% endif %}</td><td>{{ team.roi.verdict }}</td></tr>
+</tbody>
+</table>
+{% else %}
+<p>No value per unit was entered for this team, so no return is reported.</p>
+{% endif %}
+{% if sensitivity %}
+<h2 id="sensitivity">How the return changes with the value per unit</h2>
+<table id="sensitivity-row">
+<thead><tr>{% for m in sensitivity_multipliers %}<th>{{ num(m) }}&times;</th>{% endfor %}<th>Pays off in this share of draws</th></tr></thead>
+<tbody>
+<tr>{% for cell in sensitivity.cells %}<td>{% if cell %}{{ num(cell) }}{% else %}{{ dash() }}{% endif %}</td>{% endfor %}<td>{% if sensitivity.survives %}{{ num(sensitivity.survives) }}{% else %}{{ dash() }}{% endif %}</td></tr>
+</tbody>
+</table>
+{% endif %}
+{% endif %}
+{% if allocation %}
+<h2 id="next-dollar">Where the next dollar goes</h2>
+<table id="allocation-row">
+<thead><tr><th>Increment</th><th>Funded in this share of draws</th><th>Above the highest spend seen</th><th>At cap</th><th>Curve</th></tr></thead>
+<tbody>
+<tr><td>{{ num(allocation.amount) }}</td><td>{{ num(allocation.funded) }}</td><td>{% if allocation.beyond %}{{ num(allocation.beyond) }}{% else %}{{ dash() }}{% endif %}</td><td>{{ 'yes' if allocation.capped else 'no' }}</td><td>{% if allocation.identified is none %}{{ dash() }}{% elif allocation.identified %}identified{% else %}curve not identified; experiment before budget{% endif %}</td></tr>
+</tbody>
+</table>
+{% endif %}
+{% if agenda %}
+<h2 id="test-next">What to test next</h2>
+<table id="agenda-row">
+<thead><tr><th>Why unmeasured</th><th>Design</th><th>Per arm</th><th>Months</th><th>Smallest effect it can detect</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td><code>{{ agenda.reason }}</code></td><td>{{ agenda.design }}</td><td>{% if agenda.n %}{{ num(agenda.n) }}{% else %}{{ dash() }}{% endif %}</td><td>{% if agenda.length %}{{ num(agenda.length) }}{% else %}{{ dash() }}{% endif %}</td><td>{% if agenda.delta %}{{ num(agenda.delta) }}{% else %}{{ dash() }}{% endif %}</td><td><span class="lit">{{ agenda.note or "" }}</span>{% if agenda.sigma_override %}; spread of {{ num(agenda.sigma_override) }} (config assumption){% endif %}</td></tr>
+</tbody>
+</table>
+{% elif agenda_missing %}
+<h2 id="test-next">What to test next</h2>
+<p>No experiment has been designed yet for this team.</p>
+{% endif %}
+<p><a href="{{ root }}index.html">Back to the memo</a></p>
+</body>
+</html>

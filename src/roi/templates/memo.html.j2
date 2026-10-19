@@ -1,4 +1,4 @@
-{% macro num(n) %}<a href="prov/{{ n.prov_id }}.html"><span data-prov="{{ n.prov_id }}">{{ n.text }}</span></a>{% endmacro %}
+{% macro num(n) %}<a href="{{ root }}prov/{{ n.prov_id }}.html"><span data-prov="{{ n.prov_id }}">{{ n.text }}</span></a>{% endmacro %}
 {% macro dash() %}-{% endmacro %}
 <!doctype html>
 <html lang="en">
@@ -64,6 +64,12 @@ a { color: inherit; text-decoration: underline dotted; }
 <dt>{{ verdict_text['poor'] }}</dt><dd>The whole return interval is below <span class="lit">1</span>.</dd>
 <dt>{{ verdict_text['not_distinguishable'] }}</dt><dd>Anything else: the interval reaches break-even, or too few draws of the value per unit pay off.</dd>
 </dl>
+<h3>One page per team</h3>
+<ul id="team-pages">
+{% for t in teams %}
+<li><a href="teams/{{ t.team }}.html">{{ t.name }}</a></li>
+{% endfor %}
+</ul>
 <h3>Teams without a figure</h3>
 <ul>
 {% for t in unmeasured %}

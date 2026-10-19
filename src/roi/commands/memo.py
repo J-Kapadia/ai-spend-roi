@@ -46,6 +46,8 @@ def command(
             if check or require_signoff:
                 checked = memo.check_site(work, month, con)
                 click.echo(f"memo check: {_numbers(len(checked.ids))} resolved")
+                click.echo(f"  pages: {len(checked.pages)} checked (the index and {len(checked.pages) - 1} team pages)")
+                report.check("pages", True, f"{len(checked.pages)} pages checked")
                 for section, n in sorted(checked.by_section.items()):
                     click.echo(f"  {section}: {_numbers(n)} resolved")
                     report.check(f"resolved:{section}", True, f"{_numbers(n)} resolved")

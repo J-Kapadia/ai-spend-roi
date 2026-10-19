@@ -204,14 +204,16 @@ def collect(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> tuple[
     single_control = single_control_teams(con, month)
 
     teams = []
-    for team, name, status, reason, unit, kind, effect, testable in con.execute(
-        "SELECT t.team_id, t.name, e.status, e.reason, t.unit_label, t.kind, e.effect, e.pretrend_testable"
+    for team, name, status, reason, unit, kind, effect, testable, metric, direction in con.execute(
+        "SELECT t.team_id, t.name, e.status, e.reason, t.unit_label, t.kind, e.effect, e.pretrend_testable,"
+        " t.metric_id, t.direction"
         f" FROM est_team_effect e JOIN dim_team t USING (team_id) WHERE e.{at} ORDER BY t.name"
     ).fetchall():
         row = {"team": team, "name": name, "status": status, "reason": reason, "unit": unit, "kind": kind,
                "share": num(f"payroll_share:{team}"), "measured": status == "measured", "roi": None,
                "single_control": team in single_control, "pretrend_testable": testable is not False,
-               "harmful": effect is not None and effect < 0}
+               "harmful": effect is not None and effect < 0, "metric": metric,
+               "direction": "higher is better" if direction > 0 else "lower is better"}
         if status == "measured":
             row["effect"], row["lo"], row["hi"] = num(f"effect:{team}"), num(f"effect_lo:{team}"), num(f"effect_hi:{team}")
             if team in roi_verdicts:
@@ -240,7 +242,7 @@ def collect(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> tuple[
         sensitivity["multipliers"] = [num(f"multiplier:{m!r}") for m in multipliers]
         for team in sorted({team for team, _ in grid}, key=lambda t: names.get(t, t)):
             sensitivity["rows"].append({
-                "name": names.get(team, team),
+                "team": team, "name": names.get(team, team),
                 "cells": [num(f"sensitivity:{team}:{m!r}") for m in multipliers],
                 "survives": num(f"survives:{team}"),
             })
@@ -258,14 +260,14 @@ def collect(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> tuple[
             allocation["budget"] = num("allocation_budget")
             for team, name, _, capped in rows:
                 allocation["rows"].append({
-                    "name": name, "capped": capped, "identified": identified.get(team),
+                    "team": team, "name": name, "capped": capped, "identified": identified.get(team),
                     "amount": num(f"allocation:{team}"), "funded": num(f"funded_share:{team}"),
                     "beyond": num(f"beyond_observed_share:{team}"),
                 })
             funded_rows = [r for r in rows if r[2] > 0]
             allocation["degenerate"] = len(funded_rows) < 2 or all(r[3] for r in funded_rows)
 
-    agenda = {"rows": [], "missing": [], "rho": num("rho")}
+    agenda = {"rows": [], "missing": [], "missing_teams": set(), "rho": num("rho")}
     items = {}
     if has_table(con, "agenda_item"):
         items = {r[0]: r for r in con.execute(
@@ -276,10 +278,11 @@ def collect(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> tuple[
             continue
         if t["team"] not in items:
             agenda["missing"].append(t["name"])
+            agenda["missing_teams"].add(t["team"])
             continue
         _, design, note = items[t["team"]]
         agenda["rows"].append({
-            "name": t["name"], "reason": t["reason"], "design": DESIGN_TEXT.get(design, design), "note": note,
+            "team": t["team"], "name": t["name"], "reason": t["reason"], "design": DESIGN_TEXT.get(design, design), "note": note,
             "sigma_override": num(f"sigma_override:{t['team']}"),
             "n": num(f"agenda_n_per_arm:{t['team']}"),
             "length": num(f"agenda_length_months:{t['team']}"),
@@ -298,7 +301,7 @@ def collect(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> tuple[
 
     survive_share = roi_calc.load_config(config).survive_share if config is not None else roi_calc.DEFAULT_SURVIVE_SHARE
     context = {
-        "month": month, "registrations": registrations(work), "survive_share": f"{survive_share * 100:.0f}%",
+        "month": month, "root": "", "registrations": registrations(work), "survive_share": f"{survive_share * 100:.0f}%",
         "pretrend_level": f"{estimator.PRETREND_ALPHA * 100:.0f}%", "verdict_text": VERDICT_TEXT, "headline": headline, "unassigned": unassigned,
         "unassigned_threshold": f"{UNASSIGNED_THRESHOLD * 100:.0f}%", "cap_excess": f"{(alloc.CAP_FACTOR - 1) * 100:.0f}%",
         "teams": teams, "company_share": company_share,
@@ -325,9 +328,29 @@ def build_site(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> Pat
                         rows=[[prov._fmt(v) for v in r] for r in rows[:ROW_CAP]], capped=len(rows) > ROW_CAP),
             encoding="utf-8",
         )
+    teams_dir = work.site / "teams"
+    teams_dir.mkdir(parents=True, exist_ok=True)
+    for stale in teams_dir.glob("*.html"):
+        stale.unlink()
+    team_page = _env.get_template("team.html.j2")
+    for team in context["teams"]:
+        (teams_dir / f"{team['team']}.html").write_text(team_page.render(**_team_context(context, team)), encoding="utf-8")
     index = work.site / "index.html"
     index.write_text(_env.get_template("memo.html.j2").render(**context), encoding="utf-8")
     return index
+
+
+def _team_context(context: dict, team: dict) -> dict:
+    """The part of the memo context that concerns one team, with links one directory down."""
+    pick = lambda rows: next((r for r in rows if r["team"] == team["team"]), None)  # noqa: E731
+    return {
+        "month": context["month"], "root": "../", "team": team, "verdict_text": context["verdict_text"],
+        "sensitivity_multipliers": context["sensitivity"]["multipliers"],
+        "sensitivity": pick(context["sensitivity"]["rows"]),
+        "allocation": pick(context["allocation"]["rows"]),
+        "agenda": pick(context["agenda"]["rows"]),
+        "agenda_missing": team["team"] in context["agenda"]["missing_teams"],
+    }
 
 
 class _MemoScan(HTMLParser):
@@ -419,46 +442,75 @@ class _ProvPage(HTMLParser):
 
 @dataclass(frozen=True)
 class Checked:
-    ids: list[str]  # one per tagged number, in page order
+    ids: list[str]  # one per tagged number of the index, in page order
     by_section: dict[str, int]
-    lit: list[str]  # the static numbers inside `.lit`, listed for review
+    lit: list[str]  # the static numbers inside `.lit` of the index, listed for review
+    pages: dict[str, int] = field(default_factory=dict)  # tagged numbers resolved, per page of the site
 
 
 QUESTIONS = ("Does our AI spend pay off?", "Where does the next dollar go?", "What should we test next?")
 
 
-def check_site(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> Checked:
-    """Re-run every provenance predicate; raise RoiError(1, ...) on the first failure."""
-    verify_books.check_gl_tie(con, month)
+def _scan_page(path: Path, where: str) -> _MemoScan:
+    """The DOM walk of one page; raises RoiError(1, ...) for a number outside a tag or a missing planted statement."""
+    text = path.read_text(encoding="utf-8")
     scan = _MemoScan()
-    scan.feed((work.site / "index.html").read_text(encoding="utf-8"))
+    scan.feed(text)
     if scan.untagged:
-        raise RoiError(1, f"untagged number in memo body: {scan.untagged[0]}")
-    if not scan.tagged:
-        raise RoiError(1, "memo has no tagged numbers")
-    if [h for h in scan.headings if h in QUESTIONS] != list(QUESTIONS):
-        raise RoiError(1, "the three questions do not appear in order")
-    _, collected = collect(work, month, con)
+        raise RoiError(1, f"{where}untagged number in memo body: {scan.untagged[0]}")
+    if PLANTED_STATEMENT not in " ".join(text.split()):
+        raise RoiError(1, f"{where}the planted-effects statement is missing")
+    return scan
+
+
+def _resolve(work: WorkDir, con: duckdb.DuckDBPyConnection, collected: Collector, scan: _MemoScan, depth: str, where: str) -> None:
+    """Check every tagged number of one page against its record; `depth` is the page's path back to the site root."""
     for tag in scan.tagged:
         rec = collected.records.get(tag["id"]) or prov.fetch(con, tag["id"])
         if rec is None:
-            raise RoiError(1, f"number {tag['text']!r} has no provenance record {tag['id']}")
+            raise RoiError(1, f"{where}number {tag['text']!r} has no provenance record {tag['id']}")
         rows, digest = prov.recheck(con, rec, collected.config)
         if (rows, digest) != (rec.source_rows, rec.source_checksum):
-            raise RoiError(1, f"checksum mismatch for {rec.prov_id}: stored {rec.source_rows} rows, now {rows}")
+            raise RoiError(1, f"{where}checksum mismatch for {rec.prov_id}: stored {rec.source_rows} rows, now {rows}")
         if tag["text"] != rec.display_value:
-            raise RoiError(1, f"memo shows {tag['text']!r} but {rec.prov_id} records {rec.display_value!r}")
+            raise RoiError(1, f"{where}memo shows {tag['text']!r} but {rec.prov_id} records {rec.display_value!r}")
         page_path = work.site / "prov" / f"{rec.prov_id}.html"
-        if tag["href"] != f"prov/{rec.prov_id}.html" or not page_path.exists():
-            raise RoiError(1, f"number {rec.prov_id} does not link to its provenance page")
+        if tag["href"] != f"{depth}prov/{rec.prov_id}.html" or not page_path.exists():
+            raise RoiError(1, f"{where}number {rec.prov_id} does not link to its provenance page")
         page = _ProvPage()
         page.feed(page_path.read_text(encoding="utf-8"))
         if page.attrs.get("data-rows") != str(rec.source_rows) or page.attrs.get("data-checksum") != rec.source_checksum:
             raise RoiError(1, f"provenance page for {rec.prov_id} disagrees with its record")
         if rec.source_rows < ROW_CAP and prov.checksum([tuple(r) for r in page.rows]) != rec.source_checksum:
             raise RoiError(1, f"the rows shown on the page of {rec.prov_id} do not hash to its checksum")
+
+
+def check_site(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> Checked:
+    """Re-run every provenance predicate on the index and every team page; raise RoiError(1, ...) on the first failure."""
+    verify_books.check_gl_tie(con, month)
+    scan = _scan_page(work.site / "index.html", "")
+    if not scan.tagged:
+        raise RoiError(1, "memo has no tagged numbers")
+    if [h for h in scan.headings if h in QUESTIONS] != list(QUESTIONS):
+        raise RoiError(1, "the three questions do not appear in order")
+    context, collected = collect(work, month, con)
+    _resolve(work, con, collected, scan, "", "")
+    pages = {"index.html": len(scan.tagged)}
+
+    expected = {t["team"] for t in context["teams"]}
+    on_disk = {p.stem for p in (work.site / "teams").glob("*.html")}
+    for team in sorted(expected - on_disk):
+        raise RoiError(1, f"teams/{team}.html is missing; run `roi memo --month {month}` again")
+    for team in sorted(on_disk - expected):
+        raise RoiError(1, f"teams/{team}.html is not a team of this memo")
+    for team in sorted(expected):
+        name = f"teams/{team}.html"
+        team_scan = _scan_page(work.site / name, f"{name}: ")
+        _resolve(work, con, collected, team_scan, "../", f"{name}: ")
+        pages[name] = len(team_scan.tagged)
+
     by_section: dict[str, int] = {}
     for tag in scan.tagged:
         section = collected.section_of.get(tag["id"], "other")
         by_section[section] = by_section.get(section, 0) + 1
-    return Checked([t["id"] for t in scan.tagged], by_section, scan.lit)
+    return Checked([t["id"] for t in scan.tagged], by_section, scan.lit, pages)
