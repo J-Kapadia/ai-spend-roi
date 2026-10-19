@@ -18,7 +18,7 @@ import duckdb
 import jinja2
 
 from roi.db import connect as db_connect
-from roi import benchmark, calibration, prov, verify_books
+from roi import benchmark, calibration, citations, prov, verify_books
 from roi.numbers import SPEND_NAME, Number, by_name, enumerate_numbers, has_table
 from roi import roi as roi_calc
 from roi.prov import Record
@@ -97,8 +97,26 @@ def calibration_path(roi_config: Path) -> Path:
     return roi_config.with_name("calibration" + suffix + roi_config.suffix)
 
 
+def citations_path(roi_config: Path) -> Path:
+    """The citations that go with a roi config: beside it, as `citations.yaml`."""
+    return roi_config.with_name("citations" + roi_config.suffix)
+
+
+def citation_rows(work: WorkDir) -> list[citations.Citation]:
+    """The verified citation rows; none when the file is absent, so no source is quoted or linked."""
+    path = citations_path(roi_step.config_path(work))
+    if not path.exists():
+        return []
+    try:
+        return citations.verified(citations.load(path))
+    except ValueError as e:
+        raise RoiError(2, str(e)) from e
+
+
 def calibration_rows(work: WorkDir, teams: list[dict]) -> list[dict]:
-    """The calibration rows of the teams in the memo, by team name; none when the table is missing or empty."""
+    """The calibration rows of the teams in the memo, by team name; none when the table is missing or empty.
+
+    A row carries `url` and `quote` only when its source has a citation row with `verified_on`."""
     path = calibration_path(roi_step.config_path(work))
     if not path.exists():
         return []
@@ -106,11 +124,16 @@ def calibration_rows(work: WorkDir, teams: list[dict]) -> list[dict]:
         rows = calibration.load(path)
     except ValueError as e:
         raise RoiError(2, str(e)) from e
+    cited = citation_rows(work)
     names = {t["team"]: t["name"] for t in teams}
-    return sorted(
-        ({"name": names[r.team_id], "source": r.source_ref, "extrapolated": r.extrapolated} for r in rows if r.team_id in names),
-        key=lambda r: r["name"],
-    )
+    out = []
+    for r in rows:
+        if r.team_id not in names:
+            continue
+        c = citations.for_source(cited, r.source_ref)
+        out.append({"name": names[r.team_id], "source": r.source_ref, "extrapolated": r.extrapolated,
+                    "url": c.url if c else None, "quote": c.quote if c else None})
+    return sorted(out, key=lambda r: r["name"])
 
 
 def open_warehouse(work: WorkDir) -> duckdb.DuckDBPyConnection:

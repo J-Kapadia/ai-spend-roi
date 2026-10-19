@@ -1,0 +1,37 @@
+# Citations: every public statement or paper the memo or README cites, with the quote the memo may print.
+#
+#   key           short id for the row
+#   source_ref    the source exactly as it appears in config/calibration.yaml (rows are matched by string equality)
+#   url           the DOI or publisher link (https)
+#   retrieved_on  YYYY-MM-DD, the day the source was retrieved
+#   verified_on   YYYY-MM-DD, the day the quote was verified against the source's text; the memo prints a
+#                 quote, and links to the url, only for a row that has it
+#   quote         the text as printed in the source (the `figure` of the first calibration row that cites it);
+#                 omit when the memo quotes nothing
+#
+# tests/test_citations.py fails when the memo or README holds a quoted string that is not a quote here.
+rows:
+  - key: cui-2026
+    source_ref: "Cui, Demirer, Jaffe, Musolff, Peng, Salz, 2026, Management Science, doi:10.1287/mnsc.2025.00535 (figures from the June 2025 author version)"
+    url: "https://doi.org/10.1287/mnsc.2025.00535"
+    retrieved_on: "2026-10-14"
+    verified_on: "2026-10-14"
+    quote: "the number of weekly pull requests made by developers increases by 26.08% (SE: 10.3%); long-tenure developers experience smaller gains of 8% to 13%"
+  - key: brynjolfsson-2025
+    source_ref: "Brynjolfsson, Li, Raymond, 2025, Quarterly Journal of Economics 140(2):889-942, doi:10.1093/qje/qjae044"
+    url: "https://doi.org/10.1093/qje/qjae044"
+    retrieved_on: "2026-10-14"
+    verified_on: "2026-10-14"
+    quote: "the deployment of AI increases RPH by 0.30 chats or 15.2% (Table II, column 3: 0.301, SE 0.0329; pre-treatment mean 1.97)"
+  - key: dellacqua-2023
+    source_ref: "Dell'Acqua, McFowland, Mollick, Lifshitz-Assaf, Kellogg, Rajendran, Krayer, Candelon, Lakhani, 2023, Harvard Business School Working Paper 24-013"
+    url: "https://doi.org/10.2139/ssrn.4573321"
+    retrieved_on: "2026-10-14"
+    verified_on: "2026-10-14"
+    quote: "they completed 12.2% more tasks on average (Table 2: 0.111, SE 0.020 and 0.090, SE 0.021; control mean 0.824)"
+  - key: choi-2024
+    source_ref: "Choi, Monahan, Schwarcz, 2024, Lawyering in the Age of Artificial Intelligence, 109 Minnesota Law Review 147"
+    url: "https://doi.org/10.2139/ssrn.4626276"
+    retrieved_on: "2026-10-14"
+    verified_on: "2026-10-14"
+    quote: "large declines in the amount of time taken to complete tasks (-24.1%, -32.1%, -21.1%, and -11.8%); contract drafting -22.40 minutes (95% CI -33.71, -10.91) on 69.72 (Table 2)"

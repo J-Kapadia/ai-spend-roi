@@ -121,6 +121,9 @@ a { color: inherit; text-decoration: underline dotted; }
 </tbody>
 </table>
 {% endif %}
+{% macro source(r) -%}
+<cite class="lit">{% if r.url %}<a href="{{ r.url }}">{{ r.source }}</a>{% else %}{{ r.source }}{% endif %}</cite>{% if r.quote %}: <q class="lit">{{ r.quote }}</q>{% endif %}
+{%- endmacro %}
 {% if calibration %}
 <h2 id="calibration">How the planted effects were calibrated</h2>
 <p>The planted effects were calibrated to published studies. A study counts as measuring the same kind of work only when it measured the team's own task; otherwise the team's effect is carried over from the nearest work that was measured.</p>
@@ -130,7 +133,7 @@ a { color: inherit; text-decoration: underline dotted; }
 <p>These teams' planted effects come from studies that measured different work:</p>
 <ul id="calibration-different">
 {% for r in different %}
-<li>{{ r.name }}: <cite class="lit">{{ r.source }}</cite>. The study measured different work.</li>
+<li>{{ r.name }}: {{ source(r) }}. The study measured different work.</li>
 {% endfor %}
 </ul>
 {% endif %}
@@ -138,7 +141,7 @@ a { color: inherit; text-decoration: underline dotted; }
 <p>These teams' planted effects come from studies that measured the same kind of work:</p>
 <ul id="calibration-same">
 {% for r in same %}
-<li>{{ r.name }}: <cite class="lit">{{ r.source }}</cite>.</li>
+<li>{{ r.name }}: {{ source(r) }}.</li>
 {% endfor %}
 </ul>
 {% endif %}
