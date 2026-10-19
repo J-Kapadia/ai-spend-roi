@@ -4,7 +4,7 @@
 #
 #   definition-of-done.sh --fast   what every change runs: shell syntax, the scrub-check tree
 #                                  part and its tests, the fast pytest tests, and a toy build
-#                                  (which runs the dbt models and their tests).
+#                                  (which runs the dbt models and their tests), then `roi dbt test` on it.
 #   definition-of-done.sh          the fast tier plus the tests marked `slow`.
 # Exit 2 when uv is absent.
 set -euo pipefail
@@ -33,6 +33,8 @@ echo "== pytest, not slow"
 uv run --frozen pytest -q -m "not slow" -n 4
 echo "== toy build and dbt tests"
 uv run --frozen roi --work-dir "$work" build --toy
+echo "== dbt test against the built warehouse"
+uv run --frozen roi --work-dir "$work" dbt test
 
 if [ "$fast" = 0 ]; then
   echo "== pytest, slow"
