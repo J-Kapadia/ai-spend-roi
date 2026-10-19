@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  tests:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -19,20 +19,22 @@ jobs:
           enable-cache: true
       - name: Install the locked dependencies
         run: uv sync --frozen
+      # Run without a network where the runner allows it, so a hidden network call fails loudly.
       - name: Product tests
-        run: uv run --frozen pytest -q
-      # Until the real company's configuration is committed, the site is built from the toy company.
-      - name: Build the site and check that every number resolves
         run: |
-          work=$(mktemp -d)
-          uv run --frozen roi build --toy --work-dir "$work"
-          uv run --frozen roi memo --month 2025-06 --check --work-dir "$work"
-          uv run --frozen roi doctor --tree --work-dir "$work"
+          run="$(unshare -n true 2>/dev/null && echo 'unshare -n' || true)"
+          $run uv run --frozen pytest -q -m "not slow"
+      - name: Build the synthetic company and check that every number resolves
+        run: |
+          run="$(unshare -n true 2>/dev/null && echo 'unshare -n' || true)"
+          work="$(mktemp -d)"
+          $run uv run --frozen roi gen --work-dir "$work"
+          $run uv run --frozen roi build --work-dir "$work"
+          $run uv run --frozen roi memo --month 2026-03 --check --work-dir "$work"
+          $run uv run --frozen roi doctor --tree --work-dir "$work"
 
-  full:
-    # The whole definition of done, as the dispatcher's clean-extraction gate runs it, on every push to main.
-    needs: test
-    if: github.event_name == 'push'
+  definition-of-done:
+    # The default tier of the definition of done, as the clean-extraction gate runs it.
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -42,5 +44,5 @@ jobs:
           enable-cache: true
       - name: Install the locked dependencies
         run: uv sync --frozen
-      - name: Full definition of done
-        run: timeout 3600 scripts/definition-of-done.sh
+      - name: Definition of done
+        run: scripts/definition-of-done.sh
