@@ -8,7 +8,7 @@ import yaml
 from click.testing import CliRunner
 
 from conftest import connect
-from roi import memo
+from roi import memo, prov
 from roi.cli import main
 from roi.workdir import WorkDir
 
@@ -64,11 +64,18 @@ def test_a_stored_record_prints_its_fields_and_its_build_facts(built):
     assert "re-check: ok" in out and "sign-off: none" in out
 
 
-def test_a_derived_record_says_it_has_no_stored_build(built):
-    pid = ids(built)["effect:beta"]
-    out = roi(built, "explain", pid).output
-    assert "step: memo" in out and "source: est_team_effect where" in out
-    assert "none stored" in out
+def test_every_memo_number_has_a_stored_build(built):
+    con = memo.open_warehouse(WorkDir(built))
+    try:
+        _, c = memo.collect(WorkDir(built), MONTH, con)
+        for rec in c.records.values():
+            assert prov.fetch(con, rec.prov_id) is not None, rec.name
+            assert prov.builds_of(con, rec.prov_id), rec.name
+    finally:
+        con.close()
+    out = roi(built, "explain", ids(built)["effect:beta"]).output
+    assert "step: provenance" in out and "source: est_team_effect where" in out
+    assert "none stored" not in out and "derived" not in out and "  build " in out
 
 
 def test_a_config_assumption_is_explained_from_the_config_file(built):

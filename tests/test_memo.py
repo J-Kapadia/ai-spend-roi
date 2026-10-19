@@ -156,7 +156,7 @@ def test_the_degenerate_allocation_banner_appears_when_nothing_is_funded(built):
 def test_a_result_row_changed_after_the_site_was_built_fails(copy):
     edit(copy, "UPDATE est_team_effect SET effect = effect + 0.001 WHERE team_id = 'support'")
     con = memo.open_warehouse(WorkDir(copy))
-    with pytest.raises(RoiError, match="no provenance record"):
+    with pytest.raises(RoiError, match="checksum mismatch for"):
         memo.check_site(WorkDir(copy), THROUGH, con)
 
 

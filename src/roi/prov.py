@@ -38,6 +38,16 @@ class Record:
     step: str
 
 
+@dataclass(frozen=True)
+class Build:
+    build_id: str
+    git_sha: str
+    producer_kind: str
+    producer_id: str
+    checks_passed: str
+    created_at: datetime
+
+
 COLUMNS = "prov_id, name, through_month, display_value, value, source_model, source_predicate, source_rows, source_checksum, step"
 
 
@@ -139,3 +149,20 @@ def fetch_named(con: duckdb.DuckDBPyConnection, name: str, through_month: str) -
         [name, through_month],
     ).fetchone()
     return Record(*row) if row else None
+
+
+def fetch_prefix(con: duckdb.DuckDBPyConnection, prefix: str) -> list[Record]:
+    """Every stored record whose id starts with `prefix`, by id."""
+    rows = con.execute(
+        f"SELECT {COLUMNS} FROM prov_record WHERE prov_id LIKE ? || '%' ORDER BY prov_id", [prefix]
+    ).fetchall()
+    return [Record(*r) for r in rows]
+
+
+def builds_of(con: duckdb.DuckDBPyConnection, prov_id: str) -> list[Build]:
+    """Every build that wrote or re-wrote the record, oldest first."""
+    rows = con.execute(
+        "SELECT build_id, git_sha, producer_kind, producer_id, checks_passed, created_at FROM prov_build"
+        " WHERE prov_id = ? ORDER BY created_at, build_id", [prov_id],
+    ).fetchall()
+    return [Build(*r) for r in rows]
