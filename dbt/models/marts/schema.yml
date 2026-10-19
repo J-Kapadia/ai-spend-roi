@@ -62,3 +62,20 @@ models:
         data_tests: [not_null]
       - name: spend_cents
         data_tests: [not_null]
+
+  - name: fct_benchmark_ramp
+    columns:
+      - name: month
+        data_tests: [not_null]
+      - name: metric
+        data_tests: [not_null]
+      - name: index_period
+        data_tests: [not_null]
+      - name: index_value
+        data_tests: [not_null]
+      - name: teams
+        data_tests: [not_null]
+      - name: teams_with_ai
+        data_tests: [not_null]
+      - name: company_share
+        data_tests: [not_null]

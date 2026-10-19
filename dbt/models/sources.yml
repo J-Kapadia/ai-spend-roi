@@ -11,3 +11,5 @@ sources:
       - name: raw_output
       - name: dim_team
       - name: roi_settings
+      # A reference table (published figures read from data/reference), not books.
+      - name: ref_ramp_ai_index

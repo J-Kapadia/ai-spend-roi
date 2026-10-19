@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-
+from pathlib import Path
 
 from roi.db import connect as db_connect
 from roi.steps import BuildContext
@@ -35,6 +35,20 @@ TABLES = {
 }
 
 
+# Reference tables: published figures the memo sets beside the books, read from a CSV when there is one.
+REFERENCE_DIR = "reference"
+REPO_REFERENCE_DIR = Path(__file__).resolve().parents[3] / "data" / "reference"
+REFERENCE_TABLES = {
+    "ref_ramp_ai_index": (
+        "ramp_ai_index.csv",
+        {
+            "metric": "VARCHAR", "period": "VARCHAR", "value": "DECIMAL(18,4)", "unit": "VARCHAR",
+            "source_url": "VARCHAR", "retrieved_on": "DATE", "notes": "VARCHAR",
+        },
+    ),
+}
+
+
 # The months `roi rollforward` has ingested, with the SHA-256 of each file: written by the roll-forward only.
 ROLLFORWARD_INGEST_DDL = "CREATE TABLE rollforward_ingest(month DATE, file VARCHAR, sha256 VARCHAR)"
 
@@ -56,6 +70,29 @@ def _settings(work: WorkDir) -> dict[str, str]:
     return settings
 
 
+def reference_file(work: WorkDir, name: str) -> Path | None:
+    """The reference CSV `name`: the work dir's own copy first, else the one shipped with the repository."""
+    for directory in (work.data / REFERENCE_DIR, REPO_REFERENCE_DIR):
+        if (directory / name).exists():
+            return directory / name
+    return None
+
+
+def _create_reference_table(con, work: WorkDir, table: str, name: str, columns: dict[str, str]) -> None:
+    path = reference_file(work, name)
+    if path is None:
+        con.execute(f"CREATE TABLE {table}({', '.join(f'{c} {t}' for c, t in columns.items())})")
+        return
+    with open(path, encoding="utf-8", newline="") as f:
+        header = f.readline().rstrip("\r\n").lstrip("\ufeff")
+    if header != ",".join(columns):
+        raise RoiError(3, f"{path}: expected columns {', '.join(columns)}")
+    con.execute(
+        f"CREATE TABLE {table} AS SELECT * FROM read_csv(?, header = true, columns = ?)",
+        [str(path), columns],
+    )
+
+
 def run(ctx: BuildContext) -> None:
     for table in TABLES:
         if not (ctx.work.books / f"{table}.csv").exists():
@@ -72,5 +109,7 @@ def run(ctx: BuildContext) -> None:
                 f"CREATE TABLE {table} AS SELECT * FROM read_csv(?, header = true, columns = ?)",
                 [str(path), columns],
             )
+        for table, (name, columns) in REFERENCE_TABLES.items():
+            _create_reference_table(con, ctx.work, table, name, columns)
     finally:
         con.close()

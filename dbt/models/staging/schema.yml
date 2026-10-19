@@ -92,3 +92,26 @@ models:
         data_tests: [not_null]
       - name: value
         data_tests: [not_null]
+
+  - name: stg_ramp_ai_index
+    columns:
+      - name: key
+        data_tests: [unique, not_null]
+      - name: metric
+        data_tests: [not_null]
+      - name: period
+        data_tests: [not_null]
+      - name: month
+        data_tests: [not_null]
+      - name: value
+        data_tests: [not_null]
+      - name: unit
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [percent, usd, count]
+      - name: source_url
+        data_tests: [not_null]
+      - name: retrieved_on
+        data_tests: [not_null]
