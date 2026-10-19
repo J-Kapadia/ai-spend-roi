@@ -31,6 +31,12 @@ What it does not show:
 - The effect sizes are the author's choices. The value of a unit of each team's output is an assumption, printed with a low and a high case and never presented as a finding.
 - The allocation is computed from curves fitted to synthetic spend. It shows how the rule works, not where a real budget should go.
 
+## How the curve is identified
+
+Each team's dose-response curve is identified from the team's own spend ramp alone, so in this data a learning curve cannot be told from diminishing returns: a team that gets better at using the tools and a team whose tools pay less per dollar at higher spend trace the same line.
+
+The allocation is therefore bounded extrapolation: it never funds a team more than 50% beyond the highest monthly spend observed for that team, and the memo prints the share of each increment above that highest observed spend. The memo also prints the number of seed registrations, so a reader can see how many times the seed was re-registered.
+
 ## Run it
 
 Requires Python 3.12 and [uv](https://docs.astral.sh/uv/). Nothing touches the network after `uv sync`.
@@ -66,6 +72,9 @@ The memo is written to `site/` under the work directory. Money is kept in intege
 | `roi doctor [--tree \| --release]` | Health check: lock file, books, warehouse, dbt tests, ledger tie, truth boundary. `--release` adds the checks that need `.git` |
 | `roi allocate`, `roi agenda`, `roi estimate` | Print the allocation, the testing agenda and the team effects without writing anything |
 | `roi rollforward --month <month>` | Add a month, re-verify, and swap the warehouse file |
+| `roi dbt <args>` | Run a dbt subcommand (for example `roi dbt test`) against the published warehouse, with dbt's output under the work directory |
+
+`roi build`, `roi gen`, `roi verify`, `roi memo`, `roi rollforward` and `roi signoff` take `--json` and print one JSON object instead of text.
 
 Every command takes `--work-dir <dir>` and exits 0 when its checks pass, 1 when one fails, 2 for a usage error, 3 for a data integrity failure and 4 for a fail-closed configuration error.
 
