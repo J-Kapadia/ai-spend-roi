@@ -9,25 +9,33 @@ the control team's noise sd doubled (reported, not gated). The pre-trend test's 
 under the null (the generator plants no drift) and its detection rate on a planted drift are
 findings, printed and not gated.
 
-Runs on the fixture design (`tests/fixtures/gen_fixture.yaml`: Beta Co's teams and rollout months,
-invented sizes and noise) until the registered Beta Co table exists in `config/gen.yaml`.
+Runs on the shipped design, `config/gen.yaml`. Two further arms are reported, not gated: a
+learning effect (the effect grows with months since rollout to the same plateau as the spend
+curve, which the fit cannot tell from diminishing returns) and, from the printed joint pass rate,
+the number of re-registrations after which a correct method has failed too often to be believed.
+The wall time of every arm is recorded and the sum is held to a budget.
 """
 
 import dataclasses
 import math
+import time
 from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from roi import estimator
+from roi import curve, estimator
 from roi.gen import config, panel
 
 pytestmark = pytest.mark.slow
 
-FIXTURE = Path(__file__).resolve().parent / "fixtures" / "gen_fixture.yaml"
+CONFIG = Path(__file__).resolve().parents[1] / "config" / "gen.yaml"
 SEEDS = range(1, 501)
+LEARNING_SEEDS = range(1, 101)
+BUDGET_SECONDS = 240.0
+RETRY_RISK = 0.10  # a correct method may fail r + 1 independent draws with at most this probability
+TIMES: dict[str, float] = {}
 MIN_COVERAGE = 0.90
 THROUGH_MARCH, THROUGH_APRIL = "2026-03", "2026-04"
 MEASURED_MARCH = ("support", "sales_development", "product_engineering", "marketing", "finance_operations")
@@ -39,7 +47,14 @@ CHANGING_CONTROL_SETS = ("sales_development", "legal_operations")
 
 @pytest.fixture(scope="module")
 def cfg():
-    return config.load(FIXTURE)
+    return config.load(CONFIG)
+
+
+@pytest.fixture(autouse=True)
+def wall_time(request):
+    start = time.perf_counter()
+    yield
+    TIMES[request.node.name] = time.perf_counter() - start
 
 
 def estimator_panel(sim, through):
@@ -117,6 +132,29 @@ def render(title, rows, joint):
     return "\n".join(lines)
 
 
+def reregistration_limit(p):
+    """The largest r such that failing r + 1 independent draws has probability at most RETRY_RISK
+    when each draw passes with probability p; None when one failed draw is already that rare."""
+    if p >= 1.0 - RETRY_RISK:
+        return None
+    if p <= 0.0:
+        return math.inf
+    return math.ceil(math.log(RETRY_RISK) / math.log(1.0 - p)) - 1
+
+
+def render_registration(rows, joint):
+    lines = []
+    for through, passed in joint.items():
+        p = sum(passed) / len(passed)
+        r = reregistration_limit(p)
+        limit = "no limit needed" if r is None else "none (no draw passes)" if math.isinf(r) else str(r)
+        lines.append(f"  re-registration limit through {through}: p = {p:.3f}, r = {limit}")
+    lines.append("  pre-trend test size under the null (nominal 0.10) by pre-month count:")
+    for (through, team), r in rows.items():
+        lines.append(f"    {through:<8}{team:<22}pre months {r['n_pre']:>2}  false-flag rate {r['flag_rate']:.3f}")
+    return "\n".join(lines)
+
+
 @pytest.fixture(scope="module")
 def emit(request):
     reporter = request.config.pluginmanager.getplugin("terminalreporter")
@@ -139,15 +177,12 @@ def gated(cfg, emit, title):
     for (through, team), r in rows.items():
         assert r["measured"] > 0, (title, through, team)
         assert r["coverage"] >= MIN_COVERAGE, (title, through, team, r["coverage"])
-    return rows
+    return rows, joint
 
 
 def test_design_as_is(cfg, emit):
-    rows = gated(cfg, emit, "design as is")
-    emit(
-        "pre-trend test, false-flag rate under the null (nominal 0.10; finding, not gated): "
-        + ", ".join(f"{team} {r['flag_rate']:.3f}" for (through, team), r in rows.items() if through == THROUGH_MARCH)
-    )
+    rows, joint = gated(cfg, emit, "design as is")
+    emit(render_registration(rows, joint))
     assert {t for _, t in rows} == set(MEASURED_APRIL)
     assert rows[(THROUGH_MARCH, "support")]["n_pre"] == 3  # the one-degree-of-freedom team
 
@@ -191,3 +226,79 @@ def test_pretrend_power_on_the_fixture_design(emit):
         f"flagged {flagged / len(SEEDS):.3f}, not testable {untestable / len(SEEDS):.3f}"
     )
     assert 0 <= flagged <= len(SEEDS)  # a finding, not a failure
+
+
+def learning_panel(cfg, sim):
+    """`sim` with each rolled-out team's planted effect replaced by a learning path,
+    effect_at_target x (1 - exp(-m / ramp_months)) with m the months since rollout (0 in the first
+    month), in log points of the direction-normalised outcome: ln(1 + effect_at_target) is the
+    plateau of the spend curve at the target spend. The outcome is rebuilt from the simulated
+    noise: the level moves by the difference of the two effect paths."""
+    teams = []
+    for tp in sim.teams:
+        g = tp.spec.rollout_month
+        if g is None:
+            teams.append(tp)
+            continue
+        start = sim.months.index(g)
+        plateau = math.log1p(tp.spec.effect_at_target)
+        effect = np.array([
+            plateau * (1.0 - math.exp(-(k - start) / cfg.ramp_months)) if k >= start else 0.0
+            for k in range(len(sim.months))
+        ])
+        outcome = np.exp(tp.spec.direction * (tp.spec.direction * np.log(tp.outcome) - tp.effect + effect))
+        output = outcome * tp.spec.headcount if tp.spec.kind == "additive" else outcome
+        teams.append(dataclasses.replace(tp, effect=effect, outcome=outcome, output=output))
+    return dataclasses.replace(sim, teams=tuple(teams))
+
+
+def fit_curves(sim, through):
+    """Per measured team: the fitted curve from the estimator's cells, or None when not measured."""
+    results = estimator.estimate(estimator_panel(sim, through), through)
+    fits = {}
+    for team in MEASURED_MARCH:
+        r = results[team]
+        if not r.measured:
+            fits[team] = None
+            continue
+        tp = sim.team(team)
+        per_head = {m: float(tp.spend_cents[k]) / tp.spec.headcount for k, m in enumerate(sim.months) if m <= through}
+        x = np.array([per_head[c.t] for c in r.analysis.cells])
+        y = np.array([c.att for c in r.analysis.cells])
+        x0 = float(np.mean(list(per_head.values())[-curve.CURRENT_MONTHS:]))
+        fits[team] = curve.fit(x, y, r.analysis.cov, x0)
+    return fits
+
+
+def test_learning_effect_is_reported_not_gated(cfg, emit):
+    """Reported: the curve is fitted to a spend-driven and to a learning-driven effect with the same
+    plateau. The fit sees spend per head against the effect and has no way to tell the two apart."""
+    arms = {"spend-driven": defaultdict(list), "learning-driven": defaultdict(list)}
+    for seed in LEARNING_SEEDS:
+        sim = panel.simulate(cfg, seed)
+        for name, s in (("spend-driven", sim), ("learning-driven", learning_panel(cfg, sim))):
+            for team, f in fit_curves(s, THROUGH_MARCH).items():
+                if f is not None and f.marginal_at_current is not None:
+                    arms[name][team].append((f.marginal_at_current, f.identified))
+    lines = [f"learning effect, same plateau as the spend curve, {len(LEARNING_SEEDS)} seeds (reported, not gated)"]
+    lines.append(f"  {'team':<22}{'effect':<17}{'fitted':>8}{'mean marginal at current':>26}{'identified':>12}")
+    for team in MEASURED_MARCH:
+        for name, by_team in arms.items():
+            draws = by_team[team]
+            marginal = float(np.mean([d[0] for d in draws])) if draws else math.nan
+            share = sum(d[1] for d in draws) / len(draws) if draws else math.nan
+            lines.append(f"  {team:<22}{name:<17}{len(draws):>8}{marginal:>26.3e}{share:>12.3f}")
+            assert math.isfinite(marginal) and math.isfinite(share), (team, name)
+    lines.append("  marginal in log points per cent of monthly spend per head; fitted = seeds with a measured team")
+    emit("\n".join(lines))
+
+
+def test_all_arms_fit_the_time_budget(emit):
+    """Last in the module: the arms above ran in file order and left their wall times in TIMES."""
+    total = sum(TIMES.values())
+    emit(
+        "coverage simulation wall time by arm: "
+        + ", ".join(f"{name} {seconds:.1f} s" for name, seconds in TIMES.items())
+        + f"; total {total:.1f} s of {BUDGET_SECONDS:.0f} s"
+    )
+    assert total < BUDGET_SECONDS, (total, TIMES)
