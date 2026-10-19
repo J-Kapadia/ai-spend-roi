@@ -148,7 +148,24 @@ printf '[unclosed\n' > "$tmp/bad"
 run env ROI_DENYLIST_FILE="$tmp/bad" "$SCRUB" --root "$tmp/d1"
 check "invalid denylist pattern exits 4" 4 $rc
 run "$SCRUB" --root "$tmp/d1"
-check "unset denylist variable exits 4" 4 $rc
+check "unset variable and no default file exits 4" 4 $rc
+check_out "the resolved default path is named" present "$HOME/.needle/ai-spend-roi.denylist"
+
+mkdir -p "$HOME/.needle"; cp "$tmp/denylist" "$HOME/.needle/ai-spend-roi.denylist"
+run "$SCRUB" --root "$tmp/d1"
+check "unset variable uses the default denylist and catches a term" 1 $rc
+check_out "default denylist printed as run" present "denylist: run"
+check_out "term never printed (default denylist)" absent "$TERM_WORD"
+new_repo "$tmp/d4"
+run "$SCRUB" --root "$tmp/d4"
+check "clean repo passes the default denylist" 0 $rc
+check_out "default denylist run on a clean repo" present "denylist: run"
+run env ROI_DENYLIST_FILE="$tmp/missing" "$SCRUB" --root "$tmp/d1"
+check "an explicit variable wins over the default" 4 $rc
+printf 'nomatchterm9\n' > "$tmp/other"
+run env ROI_DENYLIST_FILE="$tmp/other" "$SCRUB" --root "$tmp/d1"
+check "an explicit denylist replaces the default terms" 0 $rc
+rm -r "$HOME/.needle"
 
 # --- usage
 run "$SCRUB" --bogus
@@ -172,7 +189,11 @@ check "hook allows a clean push" 0 $rc
 run env ROI_DENYLIST_FILE="$tmp/missing" git -C "$tmp/p1" push -q origin main
 check "hook refuses when the denylist is missing" 1 $rc
 run git -C "$tmp/p1" push -q origin main
-check "hook refuses when the denylist variable is unset" 1 $rc
+check "hook refuses when the variable is unset and there is no default file" 1 $rc
+mkdir -p "$HOME/.needle"; cp "$tmp/denylist" "$HOME/.needle/ai-spend-roi.denylist"
+run git -C "$tmp/p1" push -q origin main
+check "hook allows a clean push using the default denylist" 0 $rc
+rm -r "$HOME/.needle"
 
 echo "x $TERM_WORD" > "$tmp/p1/src/t.py"; git -C "$tmp/p1" add -A; git -C "$tmp/p1" commit -q -m "term"
 run env ROI_DENYLIST_FILE="$tmp/denylist" git -C "$tmp/p1" push -q origin main

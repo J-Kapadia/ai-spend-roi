@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Refuse to push private paths, secrets or denylisted terms (this repository's origin is public).
-# $ROI_DENYLIST_FILE names the denylist (no default); the private paths come from scrub-check.sh.
+# $ROI_DENYLIST_FILE names the denylist, default $HOME/.needle/ai-spend-roi.denylist; the private paths come from scrub-check.sh.
 here=$(cd "$(dirname "$0")" && pwd)
-deny=${ROI_DENYLIST_FILE-}
-[ -n "$deny" ] && [ -s "$deny" ] || { echo "pre-push: ROI_DENYLIST_FILE is unset or names a missing or empty file; refusing to push" >&2; exit 1; }
+deny=${ROI_DENYLIST_FILE:-${HOME-}/.needle/ai-spend-roi.denylist}
+[ -s "$deny" ] || { echo "pre-push: the denylist $deny is missing or empty; set ROI_DENYLIST_FILE or create it; refusing to push" >&2; exit 1; }
 "$here/../scrub-check.sh" --no-denylist >&2 || { echo "pre-push: scrub-check tree part failed; refusing" >&2; exit 1; }
 private=$("$here/../scrub-check.sh" --list-private) || { echo "pre-push: cannot read the private paths; refusing" >&2; exit 1; }
 [ -n "$private" ] || { echo "pre-push: no private paths listed; refusing to push" >&2; exit 1; }

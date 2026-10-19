@@ -12,13 +12,13 @@
 #   --exclude <path>               skip a file (repeatable).
 #   --list-private                 print the private paths, one per line, and exit.
 #
-# The denylist is the file named by $ROI_DENYLIST_FILE (no default), one extended regular
-# expression per line. Output names files, lines and commits and never prints a term or a matched
-# line.
+# The denylist is the file named by $ROI_DENYLIST_FILE, or $HOME/.needle/ai-spend-roi.denylist
+# when that variable is unset or empty: one extended regular expression per line, kept outside
+# every checkout. Output names files, lines and commits and never prints a term or a matched line.
 # The private paths are the lines of the file named by $ROI_PRIVATE_PATHS_FILE when it is set;
 # otherwise the "# Private:" block of the repository's .git/info/exclude. A path ending in "/" is a
 # directory. With neither source the private-path check is reported as skipped.
-# Exit: 0 clean, 1 hit, 2 usage, 4 cannot check (denylist variable unset, unreadable, empty or
+# Exit: 0 clean, 1 hit, 2 usage, 4 cannot check (denylist missing, unreadable, empty or
 # invalid; no .git for --history; private paths file unreadable): fails closed.
 set -euo pipefail
 
@@ -46,8 +46,8 @@ fi
 do_denylist=0
 [ "$no_denylist" = 0 ] && [ "$do_tree" = 1 ] && do_denylist=1
 
-denylist=${ROI_DENYLIST_FILE-}
-case "$denylist" in "" | /*) ;; *) denylist=$PWD/$denylist ;; esac
+denylist=${ROI_DENYLIST_FILE:-${HOME-}/.needle/ai-spend-roi.denylist}
+case "$denylist" in /*) ;; *) denylist=$PWD/$denylist ;; esac
 private_file=${ROI_PRIVATE_PATHS_FILE-}
 case "$private_file" in "" | /*) ;; *) private_file=$PWD/$private_file ;; esac
 if [ -z "$root" ]; then root=$(dirname "$0")/..; fi
@@ -167,13 +167,12 @@ if [ "$do_history" = 1 ]; then
 fi
 
 if [ "$do_denylist" = 1 ]; then
-  [ -n "$denylist" ] || { echo "scrub-check: ROI_DENYLIST_FILE is not set; refusing to pass" >&2; exit 4; }
-  [ -r "$denylist" ] || { echo "scrub-check: denylist is not readable; refusing to pass" >&2; exit 4; }
+  [ -r "$denylist" ] || { echo "scrub-check: denylist $denylist is not readable; refusing to pass" >&2; exit 4; }
   terms=$(mktemp)
   trap 'rm -f "$terms"' EXIT
   grep -v -e '^[[:space:]]*$' "$denylist" > "$terms" || true
-  [ -s "$terms" ] || { echo "scrub-check: denylist has no terms; refusing to pass" >&2; exit 4; }
-  grep -E -f "$terms" /dev/null 2>/dev/null || [ $? -eq 1 ] || { echo "scrub-check: denylist has an invalid pattern; refusing to pass" >&2; exit 4; }
+  [ -s "$terms" ] || { echo "scrub-check: denylist $denylist has no terms; refusing to pass" >&2; exit 4; }
+  grep -E -f "$terms" /dev/null 2>/dev/null || [ $? -eq 1 ] || { echo "scrub-check: denylist $denylist has an invalid pattern; refusing to pass" >&2; exit 4; }
   ran_denylist=run
   hits=$(scan_files -f "$terms")
   if [ -n "$hits" ]; then
