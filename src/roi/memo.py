@@ -18,7 +18,7 @@ import duckdb
 import jinja2
 
 from roi.db import connect as db_connect
-from roi import calibration, prov, verify_books
+from roi import benchmark, calibration, prov, verify_books
 from roi.numbers import SPEND_NAME, Number, by_name, enumerate_numbers, has_table
 from roi import roi as roi_calc
 from roi.prov import Record
@@ -229,10 +229,14 @@ def collect(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> tuple[
         low, base, high = (num(f"value_{part}:{t['team']}") for part in ("low", "base", "high"))
         assumptions.append({"name": t["name"], "unit": t["unit"], "kind": t["kind"], "low": low, "base": base, "high": high})
 
+    c.section = benchmark.SECTION
+    benchmark_nums = {n.name: c.number(n) for n in numbers.values() if n.section == benchmark.SECTION}
+
     context = {
         "month": month, "headline": headline, "teams": teams, "company_share": company_share,
         "sensitivity": sensitivity, "allocation": allocation, "agenda": agenda, "assumptions": assumptions,
         "unmeasured": [t for t in teams if t["status"] != "measured"], "calibration": calibration_rows(work, teams),
+        "benchmark": benchmark.context(con, month, benchmark_nums),
     }
     return context, c
 

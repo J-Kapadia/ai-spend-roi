@@ -1,0 +1,8 @@
+<h2 id="benchmark">How this compares with a published benchmark</h2>
+{% if benchmark %}
+<p>The Ramp AI Index puts the share of US businesses paying for AI tools at {{ num(benchmark.index) }} in <time datetime="{{ benchmark.index_period }}">{{ benchmark.index_period }}</time>{% if benchmark.prior %}, against {{ num(benchmark.prior) }} twelve months earlier{% endif %}. In <time datetime="{{ month }}">{{ month }}</time> {{ num(benchmark.teams_with_ai) }} of this company's {{ num(benchmark.teams) }} teams had AI tools ({{ num(benchmark.company_share) }}).</p>
+<p>The two shares describe different populations: businesses across the country on one side, the teams of a made-up company on the other. They are context for the reader, not a finding of this memo.</p>
+<p>Source: <a href="{{ benchmark.source_url }}">the Ramp AI Index, read on <time datetime="{{ benchmark.retrieved_on }}">{{ benchmark.retrieved_on }}</time></a>.</p>
+{% else %}
+<p>No published benchmark figure is available at or before <time datetime="{{ month }}">{{ month }}</time>.</p>
+{% endif %}

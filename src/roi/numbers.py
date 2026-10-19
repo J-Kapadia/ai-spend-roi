@@ -2,7 +2,8 @@
 
 `enumerate_numbers` lists the numbers of a month's memo in a fixed order: the headline spend,
 the payroll shares, the effects and their intervals, the return figures, the sensitivity grid,
-the allocation, the agenda and the value-per-unit assumptions taken from the config file. Each
+the allocation, the agenda, the value-per-unit assumptions taken from the config file and the published
+benchmark figures. Each
 one names the model and the source-row predicate (bounded at the month) that back it and carries
 the text to print. The build step that stores provenance and the memo that prints the numbers
 both call it, so the two cannot disagree about which numbers exist or how they read.
@@ -15,7 +16,7 @@ from pathlib import Path
 
 import duckdb
 
-from roi import prov
+from roi import benchmark, prov
 from roi import roi as roi_calc
 from roi.steps.provenance import SPEND_NAME
 from roi.workdir import RoiError
@@ -175,4 +176,5 @@ def enumerate_numbers(con: duckdb.DuckDBPyConnection, through: str, config: Path
                 v = getattr(tc.value, part)
                 add("assumptions", f"value_{part}:{team}", prov.CONFIG_MODEL,
                     prov.config_predicate(config.name, f"value_per_unit.{team}.{part}"), usd_unit(v), v)
+    out += benchmark.enumerate_numbers(con, through)
     return out

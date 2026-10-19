@@ -15,8 +15,8 @@ from roi.numbers import Number, by_name, enumerate_numbers
 
 FIXTURES = Path(__file__).parent / "fixtures"
 THROUGH = "2026-03"
-# The memo HTML that the fixture company's build produced before the numbers moved into `roi.numbers`.
-MEMO_SHA256 = "d35cdbf67d359cef6a69b84834375faec30ecd597560f03e1d021815d3a907d9"
+# The memo HTML of the fixture company's build, which has no benchmark mart, so its section is the one-sentence fallback.
+MEMO_SHA256 = "71e66a54a11a9f1e4a7fc5101b2d92a63a678e8a1830ddb68b73fbb2ef00129a"
 
 
 @pytest.fixture(scope="module")
