@@ -9,6 +9,7 @@ from click.testing import CliRunner
 from conftest import connect
 from roi import memo
 from roi.cli import main
+from roi.steps import BuildContext, provenance
 from roi.workdir import WorkDir
 
 MONTH = "2025-06"
@@ -66,9 +67,12 @@ def copy(built, tmp_path):
 
 
 def with_row(work, prior="30.1"):
-    # The build does not yet store a record for every memo number, so the row is made by hand in a copy.
-    # Once it does, build with the row loaded instead.
+    # The build has no source for the mart yet, so the row is made by hand in a copy and the provenance
+    # step is run again to store the records of its numbers. Once the build loads the mart, build with the
+    # row loaded instead.
     edit(work, DDL, "DELETE FROM fct_benchmark_ramp", ROW.format(prior=prior))
+    db = work / "warehouse" / "roi.duckdb"
+    provenance.run(BuildContext(work=WorkDir(work), db=db, through=MONTH))
     result = roi(work, "memo", "--month", MONTH, "--check")
     assert result.exit_code == 0, result.output
     return result
