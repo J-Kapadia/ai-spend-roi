@@ -15,8 +15,8 @@ from roi.numbers import Number, by_name, enumerate_numbers
 
 FIXTURES = Path(__file__).parent / "fixtures"
 THROUGH = "2026-03"
-# The memo HTML of the fixture company's build, which has no benchmark mart, so its section is the one-sentence fallback.
-MEMO_SHA256 = "71e66a54a11a9f1e4a7fc5101b2d92a63a678e8a1830ddb68b73fbb2ef00129a"
+# The memo HTML of the fixture company's build, whose benchmark section shows the repository's Ramp AI Index table.
+MEMO_SHA256 = "7b2159071003d091fb5ad8f4f8cec7ff4aee6fd497c71e568635878dda07a322"
 
 
 @pytest.fixture(scope="module")
@@ -75,7 +75,7 @@ def test_config_numbers_have_the_config_model(numbers):
 
 def test_the_headline_comes_first_and_every_section_appears(numbers):
     assert numbers[0].name == "company_ai_spend_usd" and numbers[0].section == "headline"
-    assert {n.section for n in numbers} == {"headline", "return", "allocation", "agenda", "assumptions"}
+    assert {n.section for n in numbers} == {"headline", "return", "allocation", "agenda", "assumptions", "benchmark"}
 
 
 def test_the_memo_html_is_the_one_the_numbers_replaced(built):

@@ -67,10 +67,13 @@ def copy(built, tmp_path):
 
 
 def with_row(work, prior="30.1"):
-    # The build has no source for the mart yet, so the row is made by hand in a copy and the provenance
-    # step is run again to store the records of its numbers. Once the build loads the mart, build with the
-    # row loaded instead.
-    edit(work, DDL, "DELETE FROM fct_benchmark_ramp", ROW.format(prior=prior))
+    # The build loads the mart from the repository's reference table; the row is replaced by hand in a copy
+    # so its figures are known, the records the build stored for the loaded row are dropped (the provenance
+    # step keeps a record whose id it already has), and the step is run again to store those of the new row.
+    edit(
+        work, DDL, "DELETE FROM fct_benchmark_ramp", ROW.format(prior=prior),
+        "DELETE FROM prov_record WHERE name LIKE 'benchmark\\_%' ESCAPE '\\'",
+    )
     db = work / "warehouse" / "roi.duckdb"
     provenance.run(BuildContext(work=WorkDir(work), db=db, through=MONTH))
     result = roi(work, "memo", "--month", MONTH, "--check")
@@ -183,7 +186,7 @@ def test_a_missing_table_says_so_in_one_sentence(copy):
     assert_fallback(copy)
 
 
-def test_the_toy_memo_without_a_mart_has_no_benchmark_numbers(built):
+def test_the_toy_memo_resolves_the_benchmark_numbers_of_the_loaded_table(built):
     result = roi(built, "memo", "--month", MONTH, "--check")
     assert result.exit_code == 0, result.output
-    assert "headline: 1 number resolved" in result.output and "benchmark:" not in result.output
+    assert "headline: 1 number resolved" in result.output and "benchmark: 5 numbers resolved" in result.output
