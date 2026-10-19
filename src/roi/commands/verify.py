@@ -7,7 +7,8 @@ from pathlib import Path
 
 import click
 
-from roi import estimator, rollforward, verify_books, verify_truth
+from roi import checks, estimator, rollforward, verify_books, verify_truth
+from roi.output import Report, reporting
 from roi.workdir import RoiError, WorkDir
 
 
@@ -34,84 +35,106 @@ def _leave_one_out(rows: list[verify_books.ControlSensitivity]) -> list[str]:
     return lines
 
 
+def _registry_checks(report: Report, discipline: verify_books.DisciplineReport, con, through: str, work: WorkDir) -> None:
+    """One check per registered check id. The report of group (c) pools the failures, so when there are
+    any each check is run again to say which ones they belong to."""
+    failures = {r.id: r.failures for r in (m.run(con, through, work) for m in checks.discover())} \
+        if discipline.failures else {}
+    for check_id in discipline.checked:
+        failed = failures.get(check_id, ())
+        report.check(check_id, not failed, "; ".join(failed) or "ok")
+    if discipline.failures and not any(failures.values()):
+        report.check("unmeasured_discipline", False, "; ".join(discipline.failures))
+
+
 @click.command("verify")
 @click.option("--through", required=True, help="Last month to verify, YYYY-MM.")
 @click.option("--work-dir", "work_dir", type=click.Path(file_okay=False, path_type=Path), default=None,
               help="Directory holding warehouse/ and truth/; overrides the global --work-dir.")
+@click.option("--json", "as_json", is_flag=True, help="Print one JSON object instead of text.")
 @click.pass_obj
-def command(work: WorkDir, through: str, work_dir: Path | None) -> None:
+def command(work: WorkDir, through: str, work_dir: Path | None, as_json: bool) -> None:
     """Verify the warehouse: (a) spend ties to the ledger to the cent, (b) each measured team's
     planted effect lies inside its 95% interval, (c) unmeasured teams have no ROI, and the
     leave-one-control-out report."""
     if work_dir is not None:
         work = WorkDir(work_dir)
-    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", through):
-        raise RoiError(2, f"bad month {through!r}; expected YYYY-MM")
-    if work.warehouse_db.exists():
-        rollforward.recover(work)  # finish a roll-forward that was killed between its file and marker swaps
-    con = verify_books.open_warehouse(work)
-    try:
-        months = {m for (m,) in con.execute("SELECT DISTINCT strftime(month, '%Y-%m') FROM raw_output").fetchall()}
-        if through not in months:
-            raise RoiError(2, f"the books have no output for {through}")
-        tie = verify_books.check_gl_tie(con, through)
-        click.echo(f"verify through {through}")
+    with reporting("verify", as_json) as report:
+        if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", through):
+            raise RoiError(2, f"bad month {through!r}; expected YYYY-MM")
+        if work.warehouse_db.exists():
+            rollforward.recover(work)  # finish a roll-forward that was killed between its file and marker swaps
+        con = verify_books.open_warehouse(work)
+        try:
+            months = {m for (m,) in con.execute("SELECT DISTINCT strftime(month, '%Y-%m') FROM raw_output").fetchall()}
+            if through not in months:
+                raise RoiError(2, f"the books have no output for {through}")
+            tie = verify_books.check_gl_tie(con, through)
+            report.check("gl_tie", True, f"{tie.team_months} team-months and {tie.months} company-months tie to the cent")
+            click.echo(f"verify through {through}")
+            click.echo(
+                f"(a) GL tie: ok, {tie.team_months} team-months and {tie.months} company-months tie to the cent,"
+                " and the mart agrees"
+            )
+            built = verify_books.result_months(con)
+            if through not in built:
+                # Results are kept per through month, and only the built months have any.
+                click.echo(f"(b) interval coverage: not run, the warehouse has results through {built[-1] if built else '-'} only")
+                click.echo("(c) unmeasured discipline: not run, for the same reason")
+                return
+            coverage = verify_truth.check_interval_coverage(con, work, through)
+            discipline = verify_books.check_unmeasured_discipline(con, through, work)
+            degenerate = verify_books.allocation_degenerate(con, through)
+            _registry_checks(report, discipline, con, through, work)
+            control_sensitivity = verify_books.leave_one_control_out(estimator.read_panel(con, through), through)
+        finally:
+            con.close()
+
+        all_failures: list[str] = []
+        failures = coverage.failures
+        for c in coverage.teams:
+            report.check(f"coverage:{c.team_id}", c.inside,
+                         f"planted {c.planted:+.4f}, effect {c.effect:+.4f} [{c.ci_lo:+.4f}, {c.ci_hi:+.4f}]")
+        if failures and all(c.inside for c in coverage.teams):
+            report.check("coverage", False, "; ".join(failures))
+        report.check("allocation_degenerate", True, degenerate or "ok")
         click.echo(
-            f"(a) GL tie: ok, {tie.team_months} team-months and {tie.months} company-months tie to the cent,"
-            " and the mart agrees"
+            f"(b) interval coverage: {'ok' if not failures else 'FAILED'}, planted effect inside the 95% interval for "
+            f"{len(coverage.teams) - len(failures)} of {len(coverage.teams)} measured teams"
         )
-        built = verify_books.result_months(con)
-        if through not in built:
-            # Results are kept per through month, and only the built months have any.
-            click.echo(f"(b) interval coverage: not run, the warehouse has results through {built[-1] if built else '-'} only")
-            click.echo("(c) unmeasured discipline: not run, for the same reason")
-            return
-        coverage = verify_truth.check_interval_coverage(con, work, through)
-        discipline = verify_books.check_unmeasured_discipline(con, through, work)
-        degenerate = verify_books.allocation_degenerate(con, through)
-        control_sensitivity = verify_books.leave_one_control_out(estimator.read_panel(con, through), through)
-    finally:
-        con.close()
+        for c in coverage.teams:
+            click.echo(
+                f"    {c.team_id}: planted {c.planted:+.4f}, effect {c.effect:+.4f} [{c.ci_lo:+.4f}, {c.ci_hi:+.4f}]"
+                f"{'' if c.inside else '  OUTSIDE'}"
+            )
+        all_failures += failures
+        for line in failures:
+            click.echo(f"    {line}")
 
-    all_failures: list[str] = []
-    failures = coverage.failures
-    click.echo(
-        f"(b) interval coverage: {'ok' if not failures else 'FAILED'}, planted effect inside the 95% interval for "
-        f"{len(coverage.teams) - len(failures)} of {len(coverage.teams)} measured teams"
-    )
-    for c in coverage.teams:
+        failures = list(discipline.failures)
+        measured = discipline.with_status("measured")
+        unmeasured = discipline.with_status("unmeasured")
+        control = discipline.with_status("control")
+        click.echo(f"(c) unmeasured discipline: {'ok' if not failures else 'FAILED'}")
+        click.echo(f"    measured ({len(measured)}): {', '.join(t.team_id for t in measured) or '-'}")
         click.echo(
-            f"    {c.team_id}: planted {c.planted:+.4f}, effect {c.effect:+.4f} [{c.ci_lo:+.4f}, {c.ci_hi:+.4f}]"
-            f"{'' if c.inside else '  OUTSIDE'}"
+            f"    unmeasured ({len(unmeasured)}): "
+            + (", ".join(f"{t.team_id} ({t.reason})" for t in unmeasured) or "-")
         )
-    all_failures += failures
-    for line in failures:
-        click.echo(f"    {line}")
+        click.echo(f"    control ({len(control)}): {', '.join(t.team_id for t in control) or '-'}")
+        click.echo(f"    checked: {', '.join(discipline.checked)}")
+        for note in discipline.notes:
+            click.echo(f"    {note}")
+        all_failures += failures
+        for line in failures:
+            click.echo(f"    {line}")
 
-    failures = list(discipline.failures)
-    measured = discipline.with_status("measured")
-    unmeasured = discipline.with_status("unmeasured")
-    control = discipline.with_status("control")
-    click.echo(f"(c) unmeasured discipline: {'ok' if not failures else 'FAILED'}")
-    click.echo(f"    measured ({len(measured)}): {', '.join(t.team_id for t in measured) or '-'}")
-    click.echo(
-        f"    unmeasured ({len(unmeasured)}): "
-        + (", ".join(f"{t.team_id} ({t.reason})" for t in unmeasured) or "-")
-    )
-    click.echo(f"    control ({len(control)}): {', '.join(t.team_id for t in control) or '-'}")
-    click.echo(f"    checked: {', '.join(discipline.checked)}")
-    for note in discipline.notes:
-        click.echo(f"    {note}")
-    all_failures += failures
-    for line in failures:
-        click.echo(f"    {line}")
+        for line in discipline.warnings:
+            click.echo(f"warning: {line}")
+        if degenerate:
+            click.echo(f"warning: {degenerate}")
 
-    for line in discipline.warnings:
-        click.echo(f"warning: {line}")
-    if degenerate:
-        click.echo(f"warning: {degenerate}")
-
-    for line in _leave_one_out(control_sensitivity):
-        click.echo(line)
+        for line in _leave_one_out(control_sensitivity):
+            click.echo(line)
     if all_failures:
         raise RoiError(1, "\n".join(all_failures))

@@ -9,6 +9,7 @@ import click
 
 from roi import rollforward, steps
 from roi.gen import books, config, manifest, panel, toy
+from roi.output import reporting
 from roi.steps import load
 from roi.workdir import RoiError, WorkDir
 
@@ -46,9 +47,11 @@ def _replay_months(work: WorkDir, built: str, through: str) -> list[str]:
                    "one after the other against the file being built. Default: the last month of the books.")
 @click.option("--work-dir", "work_dir", type=click.Path(file_okay=False, path_type=Path), default=None,
               help="Directory for data/, truth/ and warehouse/; overrides the global --work-dir.")
+@click.option("--json", "as_json", is_flag=True, help="Print one JSON object instead of text.")
 @click.pass_obj
 def command(
-    work: WorkDir, use_toy: bool, config_path: Path | None, through_opt: str | None, work_dir: Path | None
+    work: WorkDir, use_toy: bool, config_path: Path | None, through_opt: str | None, work_dir: Path | None,
+    as_json: bool,
 ) -> None:
     """Build the warehouse from the books.
 
@@ -61,38 +64,43 @@ def command(
     """
     if work_dir is not None:
         work = WorkDir(work_dir)
-    if use_toy and config_path is not None:
-        raise RoiError(2, "--toy and --config cannot be combined")
+    with reporting("build", as_json) as report:
+        if use_toy and config_path is not None:
+            raise RoiError(2, "--toy and --config cannot be combined")
 
-    gl_account = load.DEFAULT_GL_ACCOUNT
-    if use_toy:
-        toy.generate(work)
-        gl_account = toy.GL_ACCOUNT
-    elif config_path is not None:
-        cfg = config.load(config_path)
-        books.write(cfg, panel.simulate(cfg), work)
-        gl_account = cfg.gl_account
+        gl_account = load.DEFAULT_GL_ACCOUNT
+        if use_toy:
+            toy.generate(work)
+            gl_account = toy.GL_ACCOUNT
+        elif config_path is not None:
+            cfg = config.load(config_path)
+            books.write(cfg, panel.simulate(cfg), work)
+            gl_account = cfg.gl_account
 
-    built = _through(work)
-    manifest.check_books(work.data)
-    through = built if through_opt is None else through_opt
-    rollforward.check_month(through)
-    replay = _replay_months(work, built, through)
-    work.warehouse.mkdir(parents=True, exist_ok=True)
-    if use_toy or config_path is not None:
-        load.write_settings(work, gl_account)
-    with rollforward.locked(work):
-        rollforward.promote_pending(work)
-        rollforward.remove_db(work.warehouse_next_db)  # left behind by an interrupted build
-        ctx = steps.BuildContext(work=work, db=work.warehouse_next_db, through=built)
-        try:
-            for step in steps.discover():
-                click.echo(f"step {step.NAME}")
-                step.run(ctx)
-            for month in replay:
-                rollforward.advance(work, work.warehouse_next_db, month)
-        except BaseException:
-            rollforward.remove_db(work.warehouse_next_db)
-            raise
-        rollforward.publish(work, work.warehouse_next_db, keep_previous=False)
-    click.echo(f"built {work.warehouse_db}")
+        built = _through(work)
+        manifest.check_books(work.data)
+        report.check("manifest", True, "the books match data/MANIFEST.sha256")
+        through = built if through_opt is None else through_opt
+        rollforward.check_month(through)
+        replay = _replay_months(work, built, through)
+        work.warehouse.mkdir(parents=True, exist_ok=True)
+        if use_toy or config_path is not None:
+            load.write_settings(work, gl_account)
+        with rollforward.locked(work):
+            rollforward.promote_pending(work)
+            rollforward.remove_db(work.warehouse_next_db)  # left behind by an interrupted build
+            ctx = steps.BuildContext(work=work, db=work.warehouse_next_db, through=built)
+            try:
+                for step in steps.discover():
+                    click.echo(f"step {step.NAME}")
+                    step.run(ctx)
+                    report.check(f"step:{step.NAME}", True, "passed")
+                for month in replay:
+                    rollforward.advance(work, work.warehouse_next_db, month)
+                    report.check(f"replay:{month}", True, "ingested, dbt tests passed, spend ties to the ledger")
+            except BaseException:
+                rollforward.remove_db(work.warehouse_next_db)
+                raise
+            rollforward.publish(work, work.warehouse_next_db, keep_previous=False)
+        click.echo(f"built {work.warehouse_db}")
+        report.artifact(work.warehouse_db)
