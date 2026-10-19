@@ -30,7 +30,7 @@ scripts/scrub-check.sh --no-denylist
 echo "== scrub-check tests"
 bash tests/test_scrub_check.sh
 echo "== pytest, not slow"
-uv run --frozen pytest -q -m "not slow"
+uv run --frozen pytest -q -m "not slow" -n 4
 echo "== toy build and dbt tests"
 uv run --frozen roi --work-dir "$work" build --toy
 

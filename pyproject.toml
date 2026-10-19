@@ -19,7 +19,7 @@ dependencies = [
 roi = "roi.cli:main"
 
 [dependency-groups]
-dev = ["pytest"]
+dev = ["pytest", "pytest-xdist>=3.5"]
 
 [build-system]
 requires = ["hatchling"]
@@ -30,6 +30,9 @@ packages = ["src/roi"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Under xdist, an idle worker takes tests queued for a busy one, so a slow module does not leave
+# the other workers waiting.
+addopts = "--dist worksteal"
 markers = [
     "slow: long-running tests (coverage simulation, perf smoke, kill tests, concurrent builds); run by the default tier of the definition of done only",
 ]
