@@ -2,6 +2,7 @@
 (Scenario 6), tested on a fixture company because the real company's values per unit come later."""
 
 import hashlib
+import re
 import shutil
 from pathlib import Path
 
@@ -11,10 +12,12 @@ from click.testing import CliRunner
 from conftest import connect
 from roi import memo, prov
 from roi.cli import main
+from roi.steps import BuildContext, provenance
 from roi.workdir import RoiError, WorkDir
 
 FIXTURES = Path(__file__).parent / "fixtures"
 THROUGH = "2026-03"
+ROLLED = "2026-04"
 
 
 def roi(work, *args):
@@ -71,6 +74,7 @@ def test_the_three_questions_appear_in_order(built):
 def test_the_planted_statement_is_above_the_first_question(built):
     html = (built / "site" / "index.html").read_text(encoding="utf-8")
     above = html[: html.index("<h2")]
+    assert memo.PLANTED_STATEMENT in above
     assert "effects are planted" in above
     assert "shows that the method works" in above and "not a finding about any real company" in above
 
@@ -79,7 +83,8 @@ def test_the_check_reports_sections_and_lists_the_static_numbers(built):
     out = roi(built, "memo", "--month", THROUGH, "--check").output
     for section in ("headline", "return", "allocation", "agenda", "assumptions"):
         assert f"  {section}: " in out
-    assert "static numbers for review: 95%" in out
+    listed = re.search(r"static numbers for review: (.*)", out).group(1).split(", ")
+    assert listed == ["95%", "1", "90%", "1", "10%"]
 
 
 def test_a_measured_teams_figures_are_the_warehouse_figures(built):
@@ -332,3 +337,143 @@ def test_the_toy_company_memo_resolves_without_a_value_per_unit(tmp_path):
     html = (tmp_path / "site" / "index.html").read_text(encoding="utf-8")
     assert "no value per unit entered" in html
     assert "No allocation was written" in html
+
+
+# ---- the return-section caveats and the glossary ----------------------------------------------------------
+
+def reprove(work, month=THROUGH):
+    """Write the provenance records of the numbers the warehouse now holds, as the build's last step does."""
+    edit(work, "DELETE FROM prov_build", "DELETE FROM prov_record")
+    provenance.run(BuildContext(WorkDir(work), work / "warehouse" / "roi.duckdb", month))
+
+
+def html_of(work) -> str:
+    return (work / "site" / "index.html").read_text(encoding="utf-8")
+
+
+def row_of(html: str, name: str) -> str:
+    """The text of the return table's row for a team."""
+    table = html[html.index('id="return"'):html.index("</table>", html.index('id="return"'))]
+    return next(r for r in table.split("<tr>") if r.startswith(f"<td>{name}</td>"))
+
+
+def memo_of(work, month=THROUGH, *flags) -> str:
+    result = roi(work, "memo", "--month", month, *flags)
+    assert result.exit_code == 0, result.output
+    return html_of(work)
+
+
+@pytest.fixture(scope="module")
+def rolled(built, tmp_path_factory):
+    """The fixture company rolled forward to 2026-04, when Legal Operations has its first post-rollout month."""
+    work = tmp_path_factory.mktemp("rolled") / "w"
+    shutil.copytree(built, work, symlinks=True)
+    result = roi(work, "rollforward", "--month", ROLLED)
+    assert result.exit_code == 0, result.output
+    memo_of(work, ROLLED)
+    return work
+
+
+def test_the_seed_is_reported_as_not_yet_registered_while_the_log_is_absent(built):
+    html = html_of(built)
+    assert "The seed is not yet registered." in html and "has been registered" not in html
+
+
+def test_the_registration_sentence_counts_the_lines_of_the_log(copy):
+    (copy / "config" / "prereg.log").write_text("2026-10-01 est-1 seed=1\n\n2026-10-02 est-1 seed=2\n", encoding="utf-8")
+    html = memo_of(copy, THROUGH, "--check")
+    assert 'The seed has been registered <span class="lit">2</span> times.' in html
+    assert "not yet registered" not in html
+    (copy / "config" / "prereg.log").write_text("2026-10-01 est-1 seed=1\n", encoding="utf-8")
+    assert 'registered <span class="lit">1</span> time.' in memo_of(copy)
+
+
+def test_registrations_is_none_without_a_log_and_counts_non_empty_lines(copy):
+    assert memo.registrations(WorkDir(copy)) is None
+    (copy / "config" / "prereg.log").write_text("\n \n", encoding="utf-8")
+    assert memo.registrations(WorkDir(copy)) == 0
+
+
+def test_a_legend_states_the_three_verdicts_and_their_rules(built):
+    html = html_of(built)
+    legend = html[html.index('id="verdicts"'):html.index("</dl>", html.index('id="verdicts"'))]
+    for label in memo.VERDICT_TEXT.values():
+        assert f"<dt>{label}</dt>" in legend
+    assert 'above <span class="lit">1</span>' in legend and 'below <span class="lit">1</span>' in legend
+    assert '<span class="lit">90%</span>' in legend
+    assert html.index('id="return"') < html.index('id="verdicts"') < html.index("<h3>Teams without a figure")
+
+
+def test_the_survival_share_in_the_legend_follows_the_config(copy):
+    config = copy / "config" / "roi.yaml"
+    config.write_text(config.read_text().replace("survive_share: 0.90", "survive_share: 0.80"))
+    html = memo_of(copy)
+    assert '<span class="lit">80%</span>' in html and '<span class="lit">90%</span>' not in html
+
+
+def test_the_glossary_states_the_pretrend_level_power_and_the_simulation(built):
+    html = html_of(built)
+    glossary = html[html.index('id="pretrend-glossary"'):html.index("</p>", html.index('id="pretrend-glossary"'))]
+    assert 'runs at the <span class="lit">10%</span> level' in glossary
+    assert "low power and is conservative" in glossary
+    assert "false-flag rate is measured by the simulation in the test suite" in glossary
+    assert html.index('id="assumptions"') < html.index('id="pretrend-glossary"')
+
+
+def test_no_caveat_appears_where_its_condition_does_not_hold(built):
+    html = html_of(built)
+    for text in ("one comparison team only", "pre-trend not testable", "review the rollout", "no spend"):
+        assert text not in html, text
+    assert memo.single_control_teams(memo.open_warehouse(WorkDir(built)), THROUGH) == set()
+
+
+def test_a_team_whose_every_cell_has_one_comparison_team_says_the_interval_rests_on_one_control(rolled):
+    html = html_of(rolled)
+    legal = row_of(html, "Legal Operations")
+    assert "one comparison team only: the interval rests on one control series" in legal
+    for other in ("Support", "Marketing", "Finance Operations", "Sales Development"):
+        assert "one comparison team only" not in row_of(html, other), other
+    assert html.count("one comparison team only") == 1
+    assert memo.single_control_teams(memo.open_warehouse(WorkDir(rolled)), ROLLED) == {"legal_operations"}
+    assert roi(rolled, "memo", "--month", ROLLED, "--check").exit_code == 0
+
+
+def test_the_toy_company_beta_has_one_comparison_team(tmp_path):
+    assert roi(tmp_path, "build", "--toy").exit_code == 0
+    assert roi(tmp_path, "memo", "--month", "2025-06").exit_code == 0
+    html = html_of(tmp_path)
+    assert "one comparison team only" in row_of(html, "Beta")
+    assert "pre-trend not testable" not in html and "review the rollout" not in html
+
+
+def test_a_team_with_fewer_than_two_leads_says_its_pretrend_is_not_testable(copy):
+    edit(copy, "UPDATE est_team_effect SET pretrend_testable = false, pretrend_p = NULL WHERE team_id = 'support'")
+    reprove(copy)
+    html = memo_of(copy, THROUGH, "--check")
+    assert "pre-trend not testable" in row_of(html, "Support")
+    assert html.count("pre-trend not testable") == 1
+
+
+def test_a_negative_effect_says_to_review_the_rollout(copy):
+    edit(copy, "UPDATE est_team_effect SET effect = -0.05, ci_lo = -0.10, ci_hi = -0.01 WHERE team_id = 'support'")
+    reprove(copy)
+    html = memo_of(copy, THROUGH, "--check")
+    assert "; review the rollout</td>" in row_of(html, "Support")
+    assert html.count("review the rollout") == 1
+
+
+def test_a_measured_team_with_no_spend_in_its_window_says_no_spend(copy):
+    edit(copy, "UPDATE roi_team SET spend_cents = 0, roi_multiple = NULL, roi_lo = NULL, roi_hi = NULL WHERE team_id = 'support'")
+    reprove(copy)
+    html = memo_of(copy, THROUGH, "--check")
+    assert "<td>no spend</td>" in row_of(html, "Support")
+    assert html.count("no spend") == 1
+
+
+def test_a_team_name_is_escaped_in_the_rendered_page(built):
+    con = memo.open_warehouse(WorkDir(built))
+    context, _ = memo.collect(WorkDir(built), THROUGH, con)
+    context["teams"][0]["name"] = "<script>alert(1)</script>"
+    html = memo._env.get_template("memo.html.j2").render(**context)
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "<script" not in html

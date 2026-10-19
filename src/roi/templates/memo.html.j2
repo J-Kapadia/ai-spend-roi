@@ -24,7 +24,8 @@ a { color: inherit; text-decoration: underline dotted; }
 </head>
 <body>
 <h1>AI spend memo for <time datetime="{{ month }}">{{ month }}</time></h1>
-<p class="banner" id="planted">The company in this memo is made up and its effects are planted: the generator chose how much AI helps each team, and kept the answer in a file the method never reads. Recovering planted effects shows that the method works. It is not a finding about any real company.</p>
+<p class="banner" id="planted">{{ PLANTED_STATEMENT }}</p>
+<p id="registrations">{% if registrations is none %}The seed is not yet registered.{% else %}The seed has been registered <span class="lit">{{ registrations }}</span> {{ 'time' if registrations == 1 else 'times' }}.{% endif %}</p>
 <p>Company AI spend in <time datetime="{{ month }}">{{ month }}</time> was {{ num(headline) }}. Every number below links to the source rows that produced it.</p>
 
 <h2 id="pays-off">Does our AI spend pay off?</h2>
@@ -33,14 +34,14 @@ a { color: inherit; text-decoration: underline dotted; }
 <thead><tr><th>Team</th><th>Status</th><th>Effect</th><th>Interval</th><th>AI spend</th><th>Output value</th><th>Return multiple</th><th>Return interval</th><th>Verdict</th><th>Share of payroll</th></tr></thead>
 <tbody>
 {% for t in teams %}
-<tr><td>{{ t.name }}</td><td>{{ t.status }}{% if t.reason %} (<code>{{ t.reason }}</code>){% endif %}</td>
+<tr><td>{{ t.name }}</td><td>{{ t.status }}{% if t.reason %} (<code>{{ t.reason }}</code>){% endif %}{% if t.measured and t.single_control %}; one comparison team only: the interval rests on one control series{% endif %}{% if t.measured and not t.pretrend_testable %}; pre-trend not testable{% endif %}</td>
 {% if t.measured %}
 <td>{{ num(t.effect) }}</td><td>[{{ num(t.lo) }}, {{ num(t.hi) }}]</td>
 {% if t.roi %}
-<td>{{ num(t.roi.spend) }}</td><td>{{ num(t.roi.benefit) }}</td><td>{% if t.roi.multiple %}{{ num(t.roi.multiple) }}{% else %}{{ dash() }}{% endif %}</td>
-<td>{% if t.roi.lo and t.roi.hi %}[{{ num(t.roi.lo) }}, {{ num(t.roi.hi) }}]{% else %}{{ dash() }}{% endif %}</td><td>{{ t.roi.verdict }}</td>
+<td>{{ num(t.roi.spend) }}</td><td>{{ num(t.roi.benefit) }}</td><td>{% if t.roi.multiple %}{{ num(t.roi.multiple) }}{% elif t.roi.no_spend %}no spend{% else %}{{ dash() }}{% endif %}</td>
+<td>{% if t.roi.lo and t.roi.hi %}[{{ num(t.roi.lo) }}, {{ num(t.roi.hi) }}]{% else %}{{ dash() }}{% endif %}</td><td>{{ t.roi.verdict }}{% if t.harmful %}; review the rollout{% endif %}</td>
 {% else %}
-<td>{{ dash() }}</td><td>{{ dash() }}</td><td>{{ dash() }}</td><td>{{ dash() }}</td><td>no value per unit entered</td>
+<td>{{ dash() }}</td><td>{{ dash() }}</td><td>{{ dash() }}</td><td>{{ dash() }}</td><td>no value per unit entered{% if t.harmful %}; review the rollout{% endif %}</td>
 {% endif %}
 {% else %}
 <td>{{ dash() }}</td><td>{{ dash() }}</td><td>{{ dash() }}</td><td>{{ dash() }}</td><td>{{ dash() }}</td><td>{{ dash() }}</td><td>{{ dash() }}</td>
@@ -52,6 +53,11 @@ a { color: inherit; text-decoration: underline dotted; }
 {% endif %}
 </tbody>
 </table>
+<dl id="verdicts">
+<dt>{{ verdict_text['good'] }}</dt><dd>The whole return interval is above <span class="lit">1</span> and the team pays off in at least <span class="lit">{{ survive_share }}</span> of the draws of the value per unit.</dd>
+<dt>{{ verdict_text['poor'] }}</dt><dd>The whole return interval is below <span class="lit">1</span>.</dd>
+<dt>{{ verdict_text['not_distinguishable'] }}</dt><dd>Anything else: the interval reaches break-even, or too few draws of the value per unit pay off.</dd>
+</dl>
 <h3>Teams without a figure</h3>
 <ul>
 {% for t in unmeasured %}
@@ -109,8 +115,9 @@ a { color: inherit; text-decoration: underline dotted; }
 <p>Every team is either measured or the control, so there is nothing to test.</p>
 {% endif %}
 
-{% if assumptions %}
 <h2 id="assumptions">What the figures assume</h2>
+<p id="pretrend-glossary">The pre-trend test checks whether a team was already drifting away from its comparison teams before the rollout. It runs at the <span class="lit">{{ pretrend_level }}</span> level, has low power and is conservative, so passing it is weak evidence that the trends were parallel. Its false-flag rate is measured by the simulation in the test suite.</p>
+{% if assumptions %}
 <p>The value of one unit of each measured team's output, in dollars, from the configuration. These are assumptions, not findings.</p>
 <table id="values">
 <thead><tr><th>Team</th><th>Unit</th><th>Low</th><th>Base</th><th>High</th></tr></thead>

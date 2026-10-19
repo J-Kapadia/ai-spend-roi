@@ -18,7 +18,7 @@ import duckdb
 import jinja2
 
 from roi.db import connect as db_connect
-from roi import benchmark, calibration, citations, prov, verify_books
+from roi import benchmark, calibration, citations, estimator, prov, verify_books
 from roi.numbers import SPEND_NAME, Number, by_name, enumerate_numbers, has_table
 from roi import roi as roi_calc
 from roi.prov import Record
@@ -30,10 +30,18 @@ NUMBER = re.compile(r"[$-]?\d[\d,]*(\.\d+)?%?")
 ROW_CAP = 200
 VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 
+# Stated above the first question of every memo.
+PLANTED_STATEMENT = (
+    "The company in this memo is made up and its effects are planted: the generator chose how much AI helps each "
+    "team, and kept the answer in a file the method never reads. Recovering planted effects shows that the method "
+    "works. It is not a finding about any real company."
+)
+
 _env = jinja2.Environment(
     loader=jinja2.PackageLoader("roi", "templates"), autoescape=True, keep_trailing_newline=True,
     trim_blocks=True, lstrip_blocks=True,
 )
+_env.globals["PLANTED_STATEMENT"] = PLANTED_STATEMENT
 
 REASON_TEXT = {
     "no_pre_period": "AI tools were in place from the first month of the books, so there is no period before them to compare with.",
@@ -136,6 +144,23 @@ def calibration_rows(work: WorkDir, teams: list[dict]) -> list[dict]:
     return sorted(out, key=lambda r: r["name"])
 
 
+def registrations(work: WorkDir) -> int | None:
+    """How many times the seed has been registered: the non-empty lines of `prereg.log` beside the roi config.
+
+    None while the log is absent."""
+    path = roi_step.config_path(work).with_name("prereg.log")
+    if not path.exists():
+        return None
+    return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+
+
+def single_control_teams(con: duckdb.DuckDBPyConnection, month: str) -> set[str]:
+    """Teams whose every group-time cell has one comparison team, so the interval rests on one control series."""
+    return {team for (team,) in con.execute(
+        f"SELECT team_id FROM est_att_gt WHERE through_month = '{month}' GROUP BY team_id HAVING max(n_controls) = 1"
+    ).fetchall()}
+
+
 def open_warehouse(work: WorkDir) -> duckdb.DuckDBPyConnection:
     if not work.warehouse_db.exists():
         raise RoiError(2, f"no warehouse at {work.warehouse_db}; run `roi build` first")
@@ -166,16 +191,23 @@ def collect(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> tuple[
     headline = c.stored(head)
 
     roi_verdicts = {}
+    no_spend = set()
     if has_table(con, "roi_team"):
-        roi_verdicts = dict(con.execute(f"SELECT team_id, roi_verdict FROM roi_team WHERE {at}").fetchall())
+        for team, verdict, multiple in con.execute(f"SELECT team_id, roi_verdict, roi_multiple FROM roi_team WHERE {at}").fetchall():
+            roi_verdicts[team] = verdict
+            if multiple is None:
+                no_spend.add(team)
+    single_control = single_control_teams(con, month)
 
     teams = []
-    for team, name, status, reason, unit, kind in con.execute(
-        "SELECT t.team_id, t.name, e.status, e.reason, t.unit_label, t.kind"
+    for team, name, status, reason, unit, kind, effect, testable in con.execute(
+        "SELECT t.team_id, t.name, e.status, e.reason, t.unit_label, t.kind, e.effect, e.pretrend_testable"
         f" FROM est_team_effect e JOIN dim_team t USING (team_id) WHERE e.{at} ORDER BY t.name"
     ).fetchall():
         row = {"team": team, "name": name, "status": status, "reason": reason, "unit": unit, "kind": kind,
-               "share": num(f"payroll_share:{team}"), "measured": status == "measured", "roi": None}
+               "share": num(f"payroll_share:{team}"), "measured": status == "measured", "roi": None,
+               "single_control": team in single_control, "pretrend_testable": testable is not False,
+               "harmful": effect is not None and effect < 0}
         if status == "measured":
             row["effect"], row["lo"], row["hi"] = num(f"effect:{team}"), num(f"effect_lo:{team}"), num(f"effect_hi:{team}")
             if team in roi_verdicts:
@@ -187,6 +219,7 @@ def collect(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> tuple[
                     "lo": num(f"roi_lo:{team}"),
                     "hi": num(f"roi_hi:{team}"),
                     "verdict": VERDICT_TEXT.get(verdict, verdict),
+                    "no_spend": team in no_spend,
                 }
         else:
             row["why"] = REASON_TEXT.get(reason, "no comparison group is available") if status == "unmeasured" else None
@@ -257,8 +290,10 @@ def collect(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> tuple[
     c.section = benchmark.SECTION
     benchmark_nums = {n.name: c.number(n) for n in numbers.values() if n.section == benchmark.SECTION}
 
+    survive_share = roi_calc.load_config(config).survive_share if config is not None else roi_calc.DEFAULT_SURVIVE_SHARE
     context = {
-        "month": month, "headline": headline, "teams": teams, "company_share": company_share,
+        "month": month, "registrations": registrations(work), "survive_share": f"{survive_share * 100:.0f}%",
+        "pretrend_level": f"{estimator.PRETREND_ALPHA * 100:.0f}%", "verdict_text": VERDICT_TEXT, "headline": headline, "teams": teams, "company_share": company_share,
         "sensitivity": sensitivity, "allocation": allocation, "agenda": agenda, "assumptions": assumptions,
         "unmeasured": [t for t in teams if t["status"] != "measured"], "calibration": calibration_rows(work, teams),
         "benchmark": benchmark.context(con, month, benchmark_nums),
