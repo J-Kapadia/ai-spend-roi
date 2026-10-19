@@ -1,5 +1,6 @@
 """Spend and the ledger disagree by one cent: `roi verify` refuses with exit 3 and names the team-month."""
 
+import hashlib
 import shutil
 from pathlib import Path
 
@@ -9,7 +10,8 @@ from click.testing import CliRunner
 from conftest import connect
 from roi.cli import main
 
-FIXTURE = Path(__file__).parent / "fixtures" / "gen_fixture.yaml"
+FIXTURES = Path(__file__).parent / "fixtures"
+FIXTURE = FIXTURES / "gen_fixture.yaml"
 THROUGH = "2026-03"
 # One AI-usage ledger line of the fixture books, and the export lines it ties to.
 GL_ENTRY = "gl-support-2025-09-6100"
@@ -24,6 +26,9 @@ def roi(work, *args):
 @pytest.fixture(scope="module")
 def built(tmp_path_factory):
     work = tmp_path_factory.mktemp("built")
+    # the memo needs the fixture company's value ranges beside the books
+    (work / "config").mkdir()
+    shutil.copy(FIXTURES / "roi_fixture.yaml", work / "config" / "roi.yaml")
     result = roi(work, "build", "--config", str(FIXTURE))
     assert result.exit_code == 0, result.output
     return work
@@ -123,6 +128,32 @@ def test_every_failing_team_month_is_listed_up_to_a_cap(copy):
     assert result.exit_code == 3
     assert result.output.count("GL tie failed:") == 10
     assert "... and " in result.output
+
+
+def site_hashes(work):
+    return {
+        str(path.relative_to(work / "site")): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted((work / "site").rglob("*"))
+        if path.is_file()
+    }
+
+
+def test_the_memo_check_passes_on_untouched_books(built):
+    result = roi(built, "memo", "--month", THROUGH, "--check")
+    assert result.exit_code == 0, result.output
+    assert "memo check:" in result.output
+
+
+def test_one_cent_in_the_ledger_is_refused_by_the_memo_too(copy):
+    team, month = GL_KEY
+    assert roi(copy, "memo", "--month", THROUGH).exit_code == 0
+    assert (copy / "site" / "index.html").is_file()
+    before = site_hashes(copy)
+    edit(copy, "UPDATE raw_gl_journal SET debit_cents = debit_cents + 1 WHERE entry_id = ?", GL_ENTRY)
+    result = roi(copy, "memo", "--month", THROUGH, "--check")
+    assert result.exit_code == 3, result.output
+    assert team in result.output and month in result.output
+    assert site_hashes(copy) == before
 
 
 def test_verify_does_not_write_the_warehouse(built):
