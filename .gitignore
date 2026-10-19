@@ -21,6 +21,7 @@ __pycache__/
 /data/*
 !/data/MANIFEST.sha256
 !/data/MANIFEST.incoming.sha256
+!/data/reference/
 /truth/
 /warehouse/
 /site/
