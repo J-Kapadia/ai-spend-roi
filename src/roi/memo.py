@@ -2,9 +2,9 @@
 
 The memo reads only the result tables and the named marts. Every number in it is tagged
 `data-prov="<id>"`, wrapped in an anchor to `site/prov/<id>.html`, and backed by a provenance
-record: the stored `prov_record` row for the headline figure, and a record derived from the
-same warehouse for each figure of the result tables (a named table, a predicate bounded at the
-month, a row count and a checksum). `roi memo --check` re-runs every predicate and compares.
+record: the `prov_record` row the build stored (a named table, a predicate bounded at the
+month, a row count and a checksum). The memo never derives a record, so a number whose record the
+build did not write stops it. `roi memo --check` re-runs every predicate and compares.
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ class Num:
 
 @dataclass
 class Collector:
-    """Builds the provenance records of the numbers a memo prints, one section at a time."""
+    """Looks up the stored provenance records of the numbers a memo prints, one section at a time."""
 
     con: duckdb.DuckDBPyConnection
     month: str
@@ -84,7 +84,9 @@ class Collector:
 
     def number(self, n: Number) -> Num:
         self.section = n.section
-        rec = prov.derive(self.con, n.name, self.month, n.source_model, n.source_predicate, n.display_value, n.value, self.config)
+        rec = prov.fetch(self.con, prov.make_id(n.name, self.month, n.source_model, n.source_predicate, n.display_value))
+        if rec is None:
+            raise RoiError(1, f"no provenance record for {n.name} at {self.month}; rebuild the warehouse")
         return self._keep(rec)
 
 
@@ -136,7 +138,7 @@ def collect(work: WorkDir, month: str, con: duckdb.DuckDBPyConnection) -> tuple[
         n = numbers.get(name)
         return None if n is None else c.number(n)
 
-    # The headline is the record the build stored; every other number is derived from the warehouse.
+    # The headline is looked up by name: its text is the stored record's, whatever the mart says now.
     c.section = "headline"
     headline = c.stored(head)
 

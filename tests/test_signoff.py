@@ -204,10 +204,27 @@ def built(tmp_path_factory):
     work = tmp_path_factory.mktemp("signoff")
     (work / "config").mkdir()
     (work / "config" / "roi.yaml").write_text(ROI_YAML)
-    out = CliRunner().invoke(main, ["--work-dir", str(work), "build", "--toy"])
+    # built outside any repository, so the record of the build never says the tree was dirty
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path_factory.mktemp("cwd"))
+        out = CliRunner().invoke(main, ["--work-dir", str(work), "build", "--toy"])
     assert out.exit_code == 0, out.output
     assert CliRunner().invoke(main, ["--work-dir", str(work), "memo", "--month", "2025-06"]).exit_code == 0
     return work
+
+
+def build_in_repo(work, repo, dirty):
+    """Build `work` with `repo` as the current directory, which is where the build reads its git sha."""
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    git(repo, "-c", "user.email=a@example.com", "-c", "user.name=A", "-c", "commit.gpgsign=false",
+        "commit", "-q", "--allow-empty", "-m", "first")
+    if dirty:
+        (repo / "scratch.txt").write_text("uncommitted\n")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(repo)
+        out = CliRunner().invoke(main, ["--work-dir", str(work), "build", "--toy"])
+    assert out.exit_code == 0, out.output
+    assert CliRunner().invoke(main, ["--work-dir", str(work), "memo", "--month", "2025-06"]).exit_code == 0
 
 
 def test_signoff_refuses_a_non_interactive_run(built, tmp_path):
@@ -270,4 +287,37 @@ def test_memo_require_signoff_accepts_a_signed_commit_and_the_check_reports_it(b
     plain = CliRunner().invoke(main, ["--work-dir", str(work), "memo", "--month", "2025-06", "--check"])
     assert plain.exit_code == 0 and "sign-off: recorded by A. Person" in plain.output
     # and the signature itself verifies once software keys are allowed
+    assert signoff.verify(WorkDir(work), "2025-06", signers, require_hardware=False) == []
+
+
+def _signed_work(tmp_path, keys, monkeypatch, *, dirty):
+    key, signers = keys
+    work = tmp_path / "w"
+    (work / "config").mkdir(parents=True)
+    (work / "config" / "roi.yaml").write_text(ROI_YAML)
+    build_in_repo(work, tmp_path / "builder", dirty)
+    monkeypatch.setattr("roi.commands.signoff._interactive", lambda: True)
+    assert CliRunner().invoke(main, ["--work-dir", str(work), "signoff", "--month", "2025-06"], input="A. Person\ny\n").exit_code == 0
+    subprocess.run(["git", "init", "-q", str(work)], check=True)
+    git(work, "config", "user.email", "reviewer@example.com")
+    git(work, "config", "user.name", "Reviewer")
+    git(work, "add", "signoffs/2025-06.yaml")
+    git(work, "-c", "gpg.format=ssh", "-c", f"user.signingkey={key}.pub", "commit", "-q", "-S", "-m", "signoff: 2025-06")
+    return work, signers
+
+
+@needs_ssh
+def test_a_build_on_a_dirty_tree_cannot_be_signed_off(tmp_path, keys, monkeypatch):
+    work, signers = _signed_work(tmp_path, keys, monkeypatch, dirty=True)
+    # the sign-off itself is valid: the signed commit verifies against a listed key
+    assert [p for p in signoff.verify(WorkDir(work), "2025-06", signers, require_hardware=False) if "dirty" not in p] == []
+    shutil.copy(HARDWARE, work / "config" / "allowed-signers")
+    result = CliRunner().invoke(main, ["--work-dir", str(work), "memo", "--month", "2025-06", "--require-signoff"])
+    assert result.exit_code == 1
+    assert "the build of 2025-06 was made on a dirty tree (git " in result.output and "-dirty)" in result.output
+
+
+@needs_ssh
+def test_a_build_on_a_clean_tree_is_not_held_back(tmp_path, keys, monkeypatch):
+    work, signers = _signed_work(tmp_path, keys, monkeypatch, dirty=False)
     assert signoff.verify(WorkDir(work), "2025-06", signers, require_hardware=False) == []

@@ -154,7 +154,7 @@ def test_the_degenerate_allocation_banner_appears_when_nothing_is_funded(built):
 # ---- the ways the check fails ----------------------------------------------------------------------
 
 def test_a_result_row_changed_after_the_site_was_built_fails(copy):
-    edit(copy, "UPDATE est_team_effect SET effect = effect + 0.001 WHERE team_id = 'support'")
+    edit(copy, "UPDATE est_team_effect SET effect = effect + 1e-9 WHERE team_id = 'support'")
     con = memo.open_warehouse(WorkDir(copy))
     with pytest.raises(RoiError, match="checksum mismatch for"):
         memo.check_site(WorkDir(copy), THROUGH, con)
@@ -164,6 +164,14 @@ def test_a_stored_record_catches_a_mart_row_changed_before_the_site_is_rebuilt(c
     edit(copy, "UPDATE fct_team_month SET spend_cents = spend_cents + 1 WHERE team_id = 'support' AND month = DATE '2026-03-01'")
     result = roi(copy, "memo", "--month", THROUGH, "--check")
     assert result.exit_code == 1 and "checksum mismatch" in result.output
+
+
+def test_a_number_whose_record_was_deleted_stops_the_memo(copy):
+    edit(copy, "DELETE FROM prov_record WHERE name = 'effect:support'")
+    for args in (("memo", "--month", THROUGH), ("memo", "--month", THROUGH, "--check")):
+        result = roi(copy, *args)
+        assert result.exit_code == 1, result.output
+        assert "no provenance record for effect:support at 2026-03; rebuild the warehouse" in result.output
 
 
 def test_a_hand_edited_number_fails(copy):
@@ -213,14 +221,13 @@ def test_rows_on_a_page_that_do_not_hash_to_the_checksum_fail(copy):
         memo.check_site(WorkDir(copy), THROUGH, con)
 
 
-def test_a_changed_assumption_in_the_config_fails_the_check(copy):
+def test_a_changed_assumption_in_the_config_needs_a_rebuild_of_the_warehouse(copy):
     config = copy / "config" / "roi.yaml"
-    config.write_text(config.read_text().replace("base: 12", "base: 13"))
-    result = roi(copy, "memo", "--month", THROUGH, "--check")
-    assert result.exit_code == 0  # a rebuild of the site shows the new value and resolves it
     page = copy / "site" / "index.html"
     html = page.read_text(encoding="utf-8")
-    config.write_text(config.read_text().replace("base: 13", "base: 14"))
+    config.write_text(config.read_text().replace("base: 12", "base: 13"))
+    result = roi(copy, "memo", "--month", THROUGH, "--check")  # the build stored the old value
+    assert result.exit_code == 1 and "rebuild the warehouse" in result.output
     page.write_text(html)
     con = memo.open_warehouse(WorkDir(copy))
     with pytest.raises(RoiError, match="no provenance record|records"):

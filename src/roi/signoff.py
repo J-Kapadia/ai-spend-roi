@@ -16,6 +16,7 @@ from pathlib import Path
 
 import yaml
 
+from roi.db import connect as db_connect
 from roi.workdir import RoiError, WorkDir
 
 SIGNOFFS = "signoffs"
@@ -110,6 +111,22 @@ def in_git(root: Path) -> bool:
     return top.returncode == 0 and Path(top.stdout.strip()).resolve() == root.resolve()
 
 
+def dirty_build(work: WorkDir, month: str) -> str | None:
+    """The git sha of the latest build of `month` when it was made on a dirty tree, else None."""
+    if not work.warehouse_db.exists():
+        return None
+    con = db_connect(work.warehouse_db, read_only=True)
+    try:
+        row = con.execute(
+            "SELECT b.git_sha FROM prov_build b JOIN prov_record r USING (prov_id)"
+            " WHERE strftime(r.through_month, '%Y-%m') = ? ORDER BY b.created_at DESC, b.build_id DESC LIMIT 1",
+            [month],
+        ).fetchone()
+    finally:
+        con.close()
+    return row[0] if row and row[0].endswith("-dirty") else None
+
+
 def verify(work: WorkDir, month: str, signers: Path | None = None, require_hardware: bool = True) -> list[str]:
     """Problems with the sign-off of `month`; empty when it is recorded, current and signed.
 
@@ -123,6 +140,9 @@ def verify(work: WorkDir, month: str, signers: Path | None = None, require_hardw
         problems.append(f"no memo at {work.site} to compare the sign-off with")
     elif rec.get("memo_sha256") != memo_hash(work.site):
         problems.append(f"the memo has changed since the sign-off of {month} was recorded")
+    sha = dirty_build(work, month)
+    if sha is not None:
+        problems.append(f"the build of {month} was made on a dirty tree (git {sha})")
     signers = signers or signers_path(work)
     if require_hardware:
         problems += hardware_problems(signers)
