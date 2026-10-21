@@ -271,3 +271,11 @@ def test_release_adds_the_git_checks_to_the_tree_checks(built, tmp_path):
     assert ids[8:] == ["hook", "prereg_tag", "signing", "checkpoint", "clean_tree", "signoff"]
     failed = {c.id for c in checks if not c.passed}
     assert {"hook", "signing", "clean_tree", "signoff"} <= failed
+
+
+def test_a_tree_without_git_at_its_root_reads_no_enclosing_repository(repo):
+    (repo / "stray.txt").write_text("x")
+    inner = repo / "extracted"
+    inner.mkdir()
+    check = doctor.clean_tree(inner)
+    assert check.status == doctor.SKIP and check.detail == "no .git at the project root"

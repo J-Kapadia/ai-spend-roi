@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -13,9 +14,11 @@ from click.testing import CliRunner
 from conftest import connect
 from roi import numbers, rollforward
 from roi.cli import main
+from roi.steps import provenance
 from roi.steps import roi as roi_step
 from roi.workdir import WorkDir
 
+PROJECT = Path(__file__).resolve().parents[1]
 FIXTURE = Path(__file__).parent / "fixtures" / "gen_fixture.yaml"
 ROI_FIXTURE = Path(__file__).parent / "fixtures" / "roi_fixture.yaml"
 CLOSED = "2026-03-01"
@@ -110,11 +113,50 @@ def test_a_build_in_a_dirty_tree_marks_the_git_sha(tmp_path, monkeypatch):
     assert sha.endswith("-dirty") and len(sha) > len("-dirty")
 
 
-def test_a_build_outside_git_writes_no_git(tmp_path, monkeypatch):
+def test_a_build_outside_git_never_claims_a_commit_or_a_dirty_tree(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
     toy_build(tmp_path / "w")
-    assert shas(tmp_path / "w") == {"no-git"}
+    (sha,) = shas(tmp_path / "w")
+    assert sha == provenance._archived_sha() and not sha.endswith("-dirty")
+
+
+def _extract_project(dest: Path) -> None:
+    """The project as a `git archive` extraction: no .git, the sha file substituted when it is tracked."""
+    dest.mkdir()
+    if (PROJECT / ".git").exists():
+        archive = subprocess.run(["git", "-C", str(PROJECT), "archive", "HEAD"], capture_output=True, check=True)
+        subprocess.run(["tar", "-x", "-C", str(dest)], input=archive.stdout, check=True)
+    else:  # this run is itself in an extraction
+        shutil.copytree(PROJECT, dest, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".venv", "__pycache__", ".pytest_cache"))
+
+
+def test_an_extraction_inside_another_repository_never_reads_that_repository(tmp_path):
+    outer = tmp_path / "outer"
+    outer.mkdir()
+    (outer / "tracked.txt").write_text("x")
+    git(outer, "init", "-q")
+    git(outer, "add", ".")
+    git(outer, "commit", "-q", "-m", "enclosing")
+    (outer / "untracked.txt").write_text("makes the enclosing tree dirty")
+    enclosing = subprocess.run(["git", "-C", str(outer), "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True)
+    extraction = outer / "extracted"
+    _extract_project(extraction)
+    assert not (extraction / ".git").exists()
+
+    env = {**os.environ, "PYTHONPATH": str(extraction / "src")}
+    env.pop("GIT_CEILING_DIRECTORIES", None)
+    work = tmp_path / "w"
+    build = subprocess.run(
+        [sys.executable, "-c", "from roi.cli import main; main()", "--work-dir", str(work), "build", "--toy"],
+        cwd=extraction, env=env, capture_output=True, text=True,
+    )
+    assert build.returncode == 0, build.stdout + build.stderr
+    (sha,) = shas(work)
+    stamped = (extraction / ".gitsha").read_text().strip() if (extraction / ".gitsha").exists() else ""
+    expected = stamped if stamped and "$" not in stamped else "unknown"
+    assert sha == expected
+    assert sha != enclosing.stdout.strip() and not sha.endswith("-dirty")
 
 
 @pytest.fixture(scope="module")

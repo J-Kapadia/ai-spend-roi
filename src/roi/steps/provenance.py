@@ -9,6 +9,7 @@ from __future__ import annotations
 import subprocess
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from roi import prov, steps
 from roi.db import connect as db_connect
@@ -23,27 +24,55 @@ CHECKS_PASSED = "dbt build, gl tie"
 STAGING_DB = "roi.staging.duckdb"
 
 
-def _git(*args: str) -> subprocess.CompletedProcess | None:
+PACKAGE_ROOT = Path(__file__).resolve().parents[3]
+SHA_FILE = ".gitsha"
+UNKNOWN = "unknown"
+
+
+def _git(root: Path, *args: str) -> subprocess.CompletedProcess | None:
     try:
-        return subprocess.run(["git", *args], capture_output=True, text=True, check=True)
+        return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=True)
     except (OSError, subprocess.CalledProcessError):
         return None
 
 
-def _git_sha() -> str:
-    """The short HEAD of the current directory, `-dirty` when the tree has uncommitted changes."""
-    head = _git("rev-parse", "--short", "HEAD")
-    if head is None or not head.stdout.strip():
-        return "no-git"
-    status = _git("status", "--porcelain")
-    return head.stdout.strip() + ("-dirty" if status is not None and status.stdout.strip() else "")
+def _has_git(root: Path) -> bool:
+    """True when `root` itself carries .git (a directory, or the file of a linked work tree). Git is
+    never allowed to walk up from a tree without one: that would read an enclosing repository."""
+    return (root / ".git").exists()
+
+
+def _archived_sha() -> str:
+    """The commit `git archive` substituted into the tracked sha file, `unknown` when it was not."""
+    try:
+        text = (PACKAGE_ROOT / SHA_FILE).read_text().strip()
+    except OSError:
+        return UNKNOWN
+    return text if text and "$" not in text else UNKNOWN
+
+
+def _git_sha(work: Path) -> str:
+    """The short HEAD of the project's own repository, `-dirty` when its tree has uncommitted changes.
+
+    The repository is the build's work directory, else the current directory, and only when that
+    directory has .git at its own top. A tree without one (a `git archive` extraction, possibly sitting
+    inside another repository) is identified by its substituted sha file or `unknown`, never `-dirty`.
+    """
+    for root in (work, Path.cwd()):
+        if _has_git(root):
+            head = _git(root, "rev-parse", "--short", "HEAD")
+            if head is None or not head.stdout.strip():
+                return UNKNOWN
+            status = _git(root, "status", "--porcelain")
+            return head.stdout.strip() + ("-dirty" if status is not None and status.stdout.strip() else "")
+    return _archived_sha()
 
 
 def run(ctx: BuildContext) -> None:
     from roi.numbers import enumerate_numbers  # numbers imports SPEND_NAME from this module
 
     config = roi_step.config_path(ctx.work)
-    sha = _git_sha()
+    sha = _git_sha(ctx.work.root)
     # A roll-forward is the only producer that works on the staging file; this tells the two apart.
     producer = "roi rollforward" if ctx.db.name == STAGING_DB else "roi build"
     con = db_connect(ctx.db)

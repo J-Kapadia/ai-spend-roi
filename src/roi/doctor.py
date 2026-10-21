@@ -247,6 +247,8 @@ def signing(work: WorkDir) -> Check:
 
 
 def clean_tree(root: Path) -> Check:
+    if not (root / ".git").exists():
+        return Check("clean_tree", SKIP, "no .git at the project root")
     dirty = _git(root, "status", "--porcelain").stdout.splitlines()
     if dirty:
         return Check("clean_tree", FAIL, f"{len(dirty)} uncommitted changes, first: {dirty[0]}")
